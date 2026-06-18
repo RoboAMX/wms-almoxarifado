@@ -112,6 +112,16 @@ def carregar_base():
         return df
     except: return pd.DataFrame()
 
+@st.cache_data(ttl=30)
+def carregar_emails_config():
+    try:
+        sh = conectar_planilha()
+        ws_cfg = sh.worksheet("Config")
+        val = ws_cfg.cell(2, 1).value
+        return str(val).strip() if val else ""
+    except:
+        return ""
+
 def ir_para_tela(nome_tela, codigo_peca):
     st.session_state['menu_lateral_nav'] = nome_tela
     st.session_state['peca_selecionada'] = codigo_peca
@@ -249,11 +259,11 @@ def tela_consulta():
 
 def tela_modificar():
     cabecalho_weg()
-    st.markdown("#### Registrar Movimentação Física")
+    st.markdown("#### Registrar Movimentação Física no Galpão")
     df = carregar_base()
     if df.empty: return
 
-    cod = st.text_input("Insira o Código (SAP ou Antigo):", value=st.session_state.get('peca_selecionada', '')).strip().upper()
+    cod = st.text_input("Insira o Código (SAP ou Antigo) para registrar mudança:", value=st.session_state.get('peca_selecionada', '')).strip().upper()
     if cod:
         peca_enc = df[(df['CODIGO SAP'].astype(str).str.upper() == cod) | (df['CÓDIGO ANTIGO'].astype(str).str.upper() == cod)]
         if peca_enc.empty: st.error("❌ Peça não encontrada.")
@@ -421,8 +431,7 @@ def tela_solicitacoes():
                                     
                                     # LÓGICA DE E-MAIL
                                     try:
-                                        ws_cfg = sh.worksheet("Config")
-                                        emails_admin = ws_cfg.cell(2, 1).value
+                                        emails_admin = carregar_emails_config()
                                         lista_emails = [e.strip() for e in str(emails_admin).split(";") if e.strip()] if emails_admin else []
                                     except: lista_emails = []
 
@@ -500,7 +509,7 @@ def tela_solicitacoes():
                 col_almox, col_compras = st.columns(2)
                 
                 # ==========================================
-                # ÁREA DO ALMOXARIFADO (ATUALIZAR STATUS)
+                # ÁREA DO ALMOXARIFADO (ATUALIZAR STATUS E BAIXA FÍSICA)
                 # ==========================================
                 with col_almox:
                     if st.session_state['nivel_id'] in ["0", "1"]:
@@ -509,26 +518,26 @@ def tela_solicitacoes():
                         nst = st.selectbox("Aplicar Novo Status:", ["Em preparação", "Preparado para carregar/descarregar", "Enviado/Recebido"])
                         notificar_solic = st.checkbox("✉️ Notificar Solicitante por e-mail", value=True)
                         
-                        if st.button("🔄 Confirmar Status", type="primary") and id_alvo != "":
+                        if st.button("🔄 Confirmar Status", type="primary") and id_almox != "":
                             try:
                                 ws_solic = sh.worksheet("Solicitacoes")
-                                cabs = ws_solic.row_values(1)
-                                col_id_idx = cabs.index('ID_SOLICITACAO') + 1
+                                cabs_solic = ws_solic.row_values(1)
+                                col_id_idx = cabs_solic.index('ID_SOLICITACAO') + 1
                                 todos_ids = ws_solic.col_values(col_id_idx)
                                 
                                 if id_almox in todos_ids:
                                     linha = todos_ids.index(id_almox) + 1
                                     h_ex = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-                                    ws_solic.update_cell(linha, cabs.index('STATUS') + 1, nst)
-                                    ws_solic.update_cell(linha, cabs.index('EXECUTADO_POR') + 1, st.session_state['usuario'])
-                                    ws_solic.update_cell(linha, cabs.index('EXECUTADO_EM') + 1, h_ex)
+                                    ws_solic.update_cell(linha, cabs_solic.index('STATUS') + 1, nst)
+                                    ws_solic.update_cell(linha, cabs_solic.index('EXECUTADO_POR') + 1, st.session_state['usuario'])
+                                    ws_solic.update_cell(linha, cabs_solic.index('EXECUTADO_EM') + 1, h_ex)
                                     
                                     # Baixa Física se for Enviado/Recebido
                                     if nst == "Enviado/Recebido":
-                                        tk_sap = ws_solic.cell(linha, cabs.index('CODIGO_SAP') + 1).value
-                                        tk_tipo = ws_solic.cell(linha, cabs.index('TIPO') + 1).value.upper()
-                                        tk_dest = ws_solic.cell(linha, cabs.index('DESTINO_NOME') + 1).value.upper()
-                                        tk_nf = ws_solic.cell(linha, cabs.index('NF') + 1).value
+                                        tk_sap = ws_solic.cell(linha, cabs_solic.index('CODIGO_SAP') + 1).value
+                                        tk_tipo = str(ws_solic.cell(linha, cabs_solic.index('TIPO') + 1).value).upper()
+                                        tk_dest = str(ws_solic.cell(linha, cabs_solic.index('DESTINO_NOME') + 1).value).upper()
+                                        tk_nf = ws_solic.cell(linha, cabs_solic.index('NF') + 1).value
                                         
                                         cod_busca = tk_sap.split(" / ")[0].strip()
                                         if not cod_busca or cod_busca == "-": cod_busca = tk_sap.split(" / ")[1].strip()
@@ -546,6 +555,7 @@ def tela_solicitacoes():
                                             loc_atual = dados_base[linha_base-2][cabs_base.index('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)')]
                                             pos_atual = dados_base[linha_base-2][cabs_base.index('POSIÇÃO GALPÃO')]
                                             novo_loc = "GALPÃO" if tk_tipo == "RETORNO" else tk_dest
+                                            
                                             ws_base.update_cell(linha_base, cabs_base.index('ÚLTIMO LOCAL QUE ESTEVE')+1, f"{loc_atual} ({pos_atual})")
                                             ws_base.update_cell(linha_base, cabs_base.index('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)')+1, novo_loc)
                                             ws_base.update_cell(linha_base, cabs_base.index('ÚLTIMA MOVIMENTAÇÃO')+1, h_ex)
@@ -554,6 +564,26 @@ def tela_solicitacoes():
                                                 ws_hist = sh.worksheet("Historico")
                                                 ws_hist.append_row([h_ex, st.session_state['usuario'], tk_sap, f"WORKFLOW CONCLUÍDO ({tk_tipo})", f"{loc_atual} ({pos_atual})", novo_loc, f"NF: {tk_nf}"])
                                             except: pass
+
+                                    # DISPARO DE E-MAIL NOTIFICANDO SOLICITANTE
+                                    if notificar_solic:
+                                        solic_email = str(ws_solic.cell(linha, cabs_solic.index('SOLICITANTE') + 1).value).strip()
+                                        if solic_email != "-":
+                                            assunto = f"WEG | Protocolo {id_almox} Atualizado: {nst}"
+                                            corpo = f"""
+                                            <div style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">
+                                                <p>Olá {solic_email},</p>
+                                                <p>O seu Protocolo de Workflow foi atualizado pela equipe do Almoxarifado.</p>
+                                                <p><b>Novo Status: <span style="color:#005099;">{nst}</span></b></p>
+                                                <ul>
+                                                    <li><b>Protocolo:</b> {id_almox}</li>
+                                                    <li><b>Material:</b> {tk_sap if nst == 'Enviado/Recebido' else '-'}</li>
+                                                    <li><b>Atualizado por:</b> {st.session_state['usuario']}</li>
+                                                    <li><b>Data/Hora:</b> {h_ex}</li>
+                                                </ul>
+                                            </div>
+                                            """
+                                            enviar_email_gmail(f"{solic_email.lower()}@weg.net", assunto, corpo)
 
                                     st.success(f"✅ Protocolo {id_almox} atualizado!")
                                     st.cache_data.clear(); st.rerun() 
@@ -583,7 +613,7 @@ def tela_solicitacoes():
                                     
                                     col_e1, col_e2 = st.columns(2)
                                     btn_salvar_edit = col_e1.form_submit_button("💾 Salvar Alterações", type="primary")
-                                    btn_cancelar_tk = col_e2.form_submit_button("🗑️ Excluir (Cancelar) Protocolo")
+                                    btn_cancelar_tk = col_e2.form_submit_button("🗑️ Cancelar Protocolo")
                                     
                                     if btn_salvar_edit:
                                         try:
@@ -606,7 +636,6 @@ def tela_solicitacoes():
                                             todos_ids = ws_solic.col_values(cabs.index('ID_SOLICITACAO') + 1)
                                             linha = todos_ids.index(id_edit) + 1
                                             
-                                            # Ao invés de deletar a linha e quebrar o ID, mudamos para CANCELADO
                                             ws_solic.update_cell(linha, cabs.index('STATUS') + 1, "CANCELADO")
                                             ws_solic.update_cell(linha, cabs.index('EXECUTADO_POR') + 1, st.session_state['usuario'])
                                             ws_solic.update_cell(linha, cabs.index('EXECUTADO_EM') + 1, datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
@@ -708,10 +737,10 @@ def tela_inventario():
 
             cod = st.text_input("Bipagem Sistêmica (Insira o Código):", key=f"input_inv_{st.session_state['inv_key_counter']}").strip().upper()
             if cod:
-                if cod in ok or cod in mov or cod in nao_enc or cod in ext: st.warning("Código já consolidado.")
+                if cod in ok or cod in mov or cod in nao_enc or cod in ext: st.warning("Código com leitura já consolidada neste ciclo.")
                 else:
                     p_bip = df[(df['CODIGO SAP'].astype(str).str.upper() == cod) | (df['CÓDIGO ANTIGO'].astype(str).str.upper() == cod)]
-                    if p_bip.empty: st.error("Registro não localizado.")
+                    if p_bip.empty: st.error("Aviso: Registro mestre não localizado.")
                     else:
                         p = p_bip.iloc[0]
                         st.info(f"**Vínculo no WMS:** {p.get('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', '-')} | Slot: {p.get('POSIÇÃO GALPÃO', '-')}")
