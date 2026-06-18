@@ -147,7 +147,7 @@ def tela_login():
             except Exception as e: st.error(f"⚠️ Erro ao verificar usuários: {e}")
 
 # ==========================================
-# FUNÇÕES DAS TELAS
+# TELA 1: DASHBOARD GERAL
 # ==========================================
 def tela_geral():
     cabecalho_weg()
@@ -189,6 +189,9 @@ def tela_geral():
     st.dataframe(df, use_container_width=True, height=400)
     if st.button("🔄 Atualizar Dados Agora"): st.cache_data.clear(); st.rerun()
 
+# ==========================================
+# TELA 2: CONSULTA
+# ==========================================
 def tela_consulta():
     cabecalho_weg()
     df = carregar_base()
@@ -243,6 +246,9 @@ def tela_consulta():
                         with bc1: st.button("✏️ Modificar Posição", use_container_width=True, on_click=ir_para_tela, args=("🔄 Movimentação Fís.", cod_mem))
                     with bc2: st.button("📥 Gerar Nova Solicitação", use_container_width=True, on_click=ir_para_tela, args=("📥 Emissão de Tickets", cod_mem))
 
+# ==========================================
+# TELA 3: MODIFICAR POSIÇÃO (NUVEM 100%)
+# ==========================================
 def tela_modificar():
     cabecalho_weg()
     st.markdown("#### Registrar Movimentação Física no Galpão")
@@ -315,6 +321,9 @@ def calcular_sla(prazo_str):
         else: return "🟢 NO PRAZO"
     except: return "⚪ INDEFINIDO"
 
+# ==========================================
+# TELA 4: SOLICITAÇÕES
+# ==========================================
 def tela_solicitacoes():
     cabecalho_weg()
     aba1, aba2 = st.tabs(["📝 Nova Solicitação (Workflow)", "🔄 Gerenciar Solicitações"])
@@ -347,9 +356,10 @@ def tela_solicitacoes():
                             ticket_pendente = True; id_bloqueio = str(row.get('ID_SOLICITACAO', '-')); break
 
                 if ticket_pendente:
-                    st.error(f"🛑 ATENÇÃO: Peça com solicitação em andamento (Protocolo {id_bloqueio}). Não é possível abrir um novo fluxo.")
+                    st.error(f"🛑 ATENÇÃO: Peça com solicitação em andamento (Protocolo {id_bloqueio}). Não é possível abrir um novo fluxo até que o Almoxarifado conclua ou você cancele o atual.")
                 else:
                     st.success(f"✅ Material: **{desc}** | Armazenado em: **{loc_atual}** | Posição: **{pos_padrao}**")
+                    
                     with st.form("form_sol"):
                         c1, c2 = st.columns(2)
                         with c1:
@@ -530,6 +540,7 @@ def tela_solicitacoes():
                                             loc_atual = dados_base[linha_base-1][cabs_base.index('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)')]
                                             pos_atual = dados_base[linha_base-1][cabs_base.index('POSIÇÃO GALPÃO')]
                                             novo_loc = "GALPÃO" if tk_tipo == "RETORNO" else tk_dest
+                                            
                                             ws_base.update_cell(linha_base, cabs_base.index('ÚLTIMO LOCAL QUE ESTEVE')+1, f"{loc_atual} ({pos_atual})")
                                             ws_base.update_cell(linha_base, cabs_base.index('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)')+1, novo_loc)
                                             ws_base.update_cell(linha_base, cabs_base.index('ÚLTIMA MOVIMENTAÇÃO')+1, h_ex)
@@ -680,7 +691,7 @@ def tela_inventario():
         with col2: loc_alvo = st.selectbox("Área Abrangente:", ["TODOS", "GALPÃO", "FUNDIÇÃO", "MODELAÇÃO"])
 
         if st.button("🚀 Processar Plano de Contagem", type="primary"):
-            if not pos_alvo.strip() and loc_alvo == "TODOS": st.warning("Defina um perímetro.")
+            if not pos_alvo.strip() and loc_alvo == "TODOS": st.warning("Defina um perímetro para o plano.")
             else:
                 st.session_state['inv_key_counter'] += 1 
                 for k in ['inv_auditados_ok', 'inv_auditados_movidos', 'inv_nao_encontrados', 'inv_extras']: st.session_state[k] = []
@@ -690,7 +701,7 @@ def tela_inventario():
                 
                 df_esp = df[filtro]
                 n_inv = pos_alvo.upper().strip() if pos_alvo.strip() else loc_alvo
-                if df_esp.empty: st.warning(f"Sem itens mapeados.")
+                if df_esp.empty: st.warning(f"Sem itens mapeados para a área {n_inv}.")
                 else:
                     ls_saps = []
                     for _, r in df_esp.iterrows():
@@ -698,7 +709,7 @@ def tela_inventario():
                         if s != '-': ls_saps.append(s)
                         elif a != '-': ls_saps.append(a)
                     st.session_state['inv_ativo'], st.session_state['inv_local'], st.session_state['inv_esperados'] = True, n_inv, list(set(ls_saps))
-                    st.success(f"✅ Plano validado. Vá para a aba de Campo.")
+                    st.success(f"✅ Plano validado. Total mapeado: {len(ls_saps)} item(ns). Avance para a aba de Campo.")
 
     with aba_exec:
         if not st.session_state['inv_ativo']: st.info("Gere o Plano primeiro.")
@@ -714,10 +725,10 @@ def tela_inventario():
 
             cod = st.text_input("Bipagem Sistêmica (Insira o Código):", key=f"input_inv_{st.session_state['inv_key_counter']}").strip().upper()
             if cod:
-                if cod in ok or cod in mov or cod in nao_enc or cod in ext: st.warning("Código já consolidado.")
+                if cod in ok or cod in mov or cod in nao_enc or cod in ext: st.warning("Código com leitura já consolidada neste ciclo.")
                 else:
                     p_bip = df[(df['CODIGO SAP'].astype(str).str.upper() == cod) | (df['CÓDIGO ANTIGO'].astype(str).str.upper() == cod)]
-                    if p_bip.empty: st.error("Registro não localizado.")
+                    if p_bip.empty: st.error("Aviso: Registro mestre não localizado.")
                     else:
                         p = p_bip.iloc[0]
                         st.info(f"**Vínculo no WMS:** {p.get('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', '-')} | Slot: {p.get('POSIÇÃO GALPÃO', '-')}")
@@ -757,7 +768,7 @@ def tela_inventario():
                                                 va = str(linha[col_ant]).strip().upper() if len(linha) > col_ant else ""
                                                 if cod in [vs, va] and cod != "":
                                                     linha_alvo = i; break
-                                                    
+                                            
                                             if linha_alvo:
                                                 dh = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
                                                 ws_base.update_cell(linha_alvo, cabecalhos.index('ÚLTIMO LOCAL QUE ESTEVE')+1, f"{p.get('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', '-')} ({p.get('POSIÇÃO GALPÃO', '-')})")
@@ -767,7 +778,8 @@ def tela_inventario():
                                                 ws_base.update_cell(linha_alvo, cabecalhos.index('DATA_ULTIMA_CONTAGEM')+1, dh)
                                                 
                                                 try:
-                                                    sh.worksheet("Historico").append_row([dh, st.session_state['usuario'], cod, "INVENTÁRIO (AJUSTE)", f"{p.get('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', '-')} ({p.get('POSIÇÃO GALPÃO', '-')})", f"{n_loc.upper()} ({n_pos.upper()})", f"WMS por {st.session_state['usuario']}"])
+                                                    ws_hist = sh.worksheet("Historico")
+                                                    ws_hist.append_row([dh, st.session_state['usuario'], cod, "INVENTÁRIO (AJUSTE)", f"{p.get('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', '-')} ({p.get('POSIÇÃO GALPÃO', '-')})", f"{n_loc.upper()} ({n_pos.upper()})", f"Rotina WMS processada por {st.session_state['usuario']}"])
                                                 except: pass
 
                                                 if cod in esp: st.session_state['inv_auditados_movidos'].append(cod)
@@ -782,11 +794,11 @@ def tela_inventario():
                 df_ex = df_lst[[c for c in ['CODIGO SAP', 'CÓDIGO ANTIGO', 'DESCRIÇÃO', 'POSIÇÃO GALPÃO'] if c in df_lst.columns]].copy()
                 def st_cont(rw):
                     s, a = str(rw.get('CODIGO SAP','-')).strip(), str(rw.get('CÓDIGO ANTIGO','-')).strip()
-                    if s in ok or a in ok: return "✅ Conforme"
-                    if s in mov or a in mov: return "🔄 Ajustado"
-                    if s in ext or a in ext: return "⭐ Extra (Sobressalente)"
-                    if s in nao_enc or a in nao_enc: return "🚨 Desvio Identificado"
-                    return "⏳ Aguardando"
+                    if s in ok or a in ok: return "Consolidado"
+                    if s in mov or a in mov: return "Ajustado"
+                    if s in ext or a in ext: return "Sobressalente"
+                    if s in nao_enc or a in nao_enc: return "Desvio Identificado"
+                    return "Pendente"
                 df_ex['Status Operacional'] = df_ex.apply(st_cont, axis=1)
                 df_ex.sort_values(by='Status Operacional', ascending=False, inplace=True)
                 st.dataframe(df_ex, use_container_width=True, hide_index=True)
@@ -849,9 +861,7 @@ def tela_inventario():
 
                     ws_rel.append_row(nova_linha_rel)
                     
-                    # ==============================================================
-                    # MÁGICA DOS DETALHES DO INVENTÁRIO (ITEM A ITEM)
-                    # ==============================================================
+                    # === NOVO: GRAVAÇÃO DO RELATÓRIO DETALHADO (ITEM A ITEM) ===
                     try: ws_itens = sh.worksheet("Inventario_Itens")
                     except:
                         ws_itens = sh.add_worksheet(title="Inventario_Itens", rows="1000", cols="10")
@@ -892,7 +902,6 @@ def tela_inventario():
             df_rel = pd.DataFrame(sh.worksheet("Relatorio_Inventario").get_all_records()).astype(str)
             df_rel.replace(["", "None", "nan", "NaN"], "-", inplace=True)
             
-            # Tenta carregar a aba de itens para o detalhamento
             try:
                 df_itens = pd.DataFrame(sh.worksheet("Inventario_Itens").get_all_records()).astype(str)
                 df_itens.replace(["", "None", "nan", "NaN"], "-", inplace=True)
@@ -911,10 +920,8 @@ def tela_inventario():
                     if "FALTANTES" in dfs.columns: md |= pd.to_numeric(dfs["FALTANTES"], errors='coerce').fillna(0) > 0
                     dfs = dfs[md]
                 
-                # Mostra o resumo
                 st.dataframe(dfs.iloc[::-1], use_container_width=True, hide_index=True)
                 
-                # Mostra o Detalhamento (Item a Item)
                 if not df_itens.empty:
                     st.markdown("---")
                     st.markdown("### 🔍 Detalhamento do Inventário (Item a Item)")
@@ -922,7 +929,6 @@ def tela_inventario():
                     if doc_selecionado != "":
                         df_itens_doc = df_itens[df_itens['DOC_INV'] == doc_selecionado]
                         if not df_itens_doc.empty:
-                            # Ordena para os Faltantes e Corrigidos ficarem no topo da lista visualmente
                             df_itens_doc.sort_values(by='STATUS_CONTAGEM', ascending=False, inplace=True)
                             st.dataframe(df_itens_doc, use_container_width=True, hide_index=True)
                         else:
