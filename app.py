@@ -1,9 +1,14 @@
 import streamlit as st
 import pandas as pd
+import os
 import altair as alt
 from datetime import datetime, time
 import gspread
 import json
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
 
 # ==========================================
 # CONFIGURAÇÃO DA PÁGINA E CSS
@@ -35,22 +40,44 @@ def cabecalho_weg():
     """, unsafe_allow_html=True)
 
 # ==========================================
-# CONEXÃO COM GOOGLE SHEETS (NUVEM)
+# CONEXÃO COM GOOGLE SHEETS E GMAIL
 # ==========================================
-# O Streamlit vai ler o arquivo JSON que vamos cadastrar na nuvem como um "Segredo"
 def conectar_planilha():
     try:
-        # Lê o segredo chamado 'gcp_service_account' cadastrado no Streamlit Cloud
         credenciais_dict = json.loads(st.secrets["gcp_service_account"])
         gc = gspread.service_account_from_dict(credenciais_dict)
-        
-        # COLOQUE AQUI A URL COMPLETA DA SUA PLANILHA DO GOOGLE SHEETS!
-        URL_PLANILHA = st.secrets["url_planilha"] 
-        sh = gc.open_by_url(URL_PLANILHA)
-        return sh
+        return gc.open_by_url(st.secrets["url_planilha"])
     except Exception as e:
-        st.error(f"Erro ao conectar com o Google Sheets: Verifique se os Segredos foram configurados corretamente. ({e})")
+        st.error(f"Erro ao conectar com o Google Sheets. ({e})")
         return None
+
+def enviar_email_gmail(destinatarios, assunto, corpo_html, arquivo_pdf=None, nome_pdf="Anexo_NF.pdf"):
+    try:
+        remetente = st.secrets["email_robo"]
+        senha = st.secrets["senha_robo"]
+        
+        msg = MIMEMultipart()
+        msg['From'] = remetente
+        msg['To'] = destinatarios
+        msg['Subject'] = assunto
+        
+        msg.attach(MIMEText(corpo_html, 'html'))
+        
+        # Anexa o PDF se existir
+        if arquivo_pdf is not None:
+            part = MIMEApplication(arquivo_pdf, Name=nome_pdf)
+            part['Content-Disposition'] = f'attachment; filename="{nome_pdf}"'
+            msg.attach(part)
+            
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(remetente, senha)
+        server.sendmail(remetente, destinatarios.split(';'), msg.as_string())
+        server.quit()
+        return True
+    except Exception as e:
+        st.warning(f"⚠️ Erro ao enviar E-mail. Verifique a Senha de App no Streamlit Secrets. ({e})")
+        return False
 
 # ==========================================
 # CONTROLE DE SESSÃO
@@ -73,7 +100,7 @@ if 'inv_nao_encontrados' not in st.session_state: st.session_state['inv_nao_enco
 if 'inv_extras' not in st.session_state: st.session_state['inv_extras'] = []
 if 'inv_key_counter' not in st.session_state: st.session_state['inv_key_counter'] = 0
 
-@st.cache_data(ttl=30) # Atualiza mais rápido na nuvem
+@st.cache_data(ttl=30)
 def carregar_base():
     sh = conectar_planilha()
     if not sh: return pd.DataFrame()
@@ -82,7 +109,6 @@ def carregar_base():
         dados = ws.get_all_records()
         df = pd.DataFrame(dados).astype(str)
         df.columns = df.columns.str.strip()
-        # Converte strings vazias para traço
         df.replace(["", "None", "nan", "NaN"], "-", inplace=True)
         return df
     except: return pd.DataFrame()
@@ -113,7 +139,6 @@ def tela_login():
                 df_usuarios['SENHA'] = df_usuarios['SENHA'].str.strip()
                 
                 filtro = (df_usuarios['USUARIO'] == usuario_input) & (df_usuarios['SENHA'] == senha_input)
-                
                 if filtro.any():
                     dados_usuario = df_usuarios[filtro].iloc[0]
                     nivel_num = str(dados_usuario['NIVEL_ACESSO']).strip()
@@ -134,7 +159,6 @@ def tela_geral():
     df = carregar_base()
     if df.empty: return st.warning("⚠️ A aba 'Base' está vazia ou não foi encontrada.")
 
-    st.markdown("#### Indicadores da Operação")
     col1, col2, col3, col4, col5, col6 = st.columns(6)
     df_ativos = df[df['LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)'].astype(str).str.upper() != "DESCARTADO"]
     total_modelos = len(df_ativos)
@@ -193,7 +217,7 @@ def tela_consulta():
             st.markdown("#### Ficha Técnica do Modelo")
             
             def fmt(idx): return f"SAP: {df_f.loc[idx].get('CODIGO SAP', '-')} | {df_f.loc[idx].get('DESCRIÇÃO', '-')}"
-            item = st.selectbox("Selecione a peça:", df_f.index.tolist(), format_func=fmt)
+            item = st.selectbox("Selecione a peça detalhada:", df_f.index.tolist(), format_func=fmt)
             
             if item is not None:
                 p = df_f.loc[item]
@@ -209,8 +233,8 @@ def tela_consulta():
                         st.info(f"📍 **Local:** {p.get('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', '-')}")
                         st.success(f"🗄️ **Posição:** {p.get('POSIÇÃO GALPÃO', '-')}")
                     with c3:
-                        st.markdown("**Detalhes**")
-                        st.write(f"**Equipamento:** {p.get('MODELO EQUIPAMENTO', '-')}")
+                        st.markdown("**Detalhes Técnicos**")
+                        st.write(f"**Aplicação:** {p.get('TURBINA OU REDUTOR?', '-')} / {p.get('MODELO EQUIPAMENTO', '-')}")
                         st.write(f"**Última Movimentação:** {p.get('ÚLTIMA MOVIMENTAÇÃO', '-')}")
                     
                     obs = p.get('OBSERVAÇÃO', '-')
@@ -226,11 +250,11 @@ def tela_consulta():
 
 def tela_modificar():
     cabecalho_weg()
-    st.markdown("#### Registrar Movimentação Física")
+    st.markdown("#### Registrar Movimentação Física no Galpão")
     df = carregar_base()
     if df.empty: return
 
-    cod = st.text_input("Insira o Código (SAP ou Antigo):", value=st.session_state.get('peca_selecionada', '')).strip().upper()
+    cod = st.text_input("Insira o Código (SAP ou Antigo) para registrar mudança:", value=st.session_state.get('peca_selecionada', '')).strip().upper()
     if cod:
         peca_enc = df[(df['CODIGO SAP'].astype(str).str.upper() == cod) | (df['CÓDIGO ANTIGO'].astype(str).str.upper() == cod)]
         if peca_enc.empty: st.error("❌ Peça não encontrada.")
@@ -255,8 +279,6 @@ def tela_modificar():
                         try:
                             sh = conectar_planilha()
                             ws_base = sh.worksheet("Base")
-                            
-                            # Na nuvem, pegamos todas as linhas e procuramos o index exato
                             dados_completos = ws_base.get_all_values()
                             cabecalhos = dados_completos[0]
                             col_sap = cabecalhos.index('CODIGO SAP')
@@ -272,7 +294,6 @@ def tela_modificar():
                             
                             if linha_alvo_sheets:
                                 dh = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-                                # Atualiza celula a celula na nuvem
                                 ws_base.update_cell(linha_alvo_sheets, cabecalhos.index('ÚLTIMO LOCAL QUE ESTEVE')+1, f"{loc_atual} ({pos_atual})")
                                 ws_base.update_cell(linha_alvo_sheets, cabecalhos.index('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)')+1, n_loc.upper())
                                 ws_base.update_cell(linha_alvo_sheets, cabecalhos.index('POSIÇÃO GALPÃO')+1, n_pos.upper())
@@ -338,6 +359,9 @@ def tela_solicitacoes():
                         nf = st.text_input("Documento / Nota Fiscal (* Obrigatório):")
                         solic = st.text_input("Usuário Solicitante:", value=st.session_state['usuario'])
                         obs = st.text_input("Motivo / Observações:")
+                        
+                        st.markdown("---")
+                        arquivo_anexo = st.file_uploader("📎 Anexar NF (PDF opcional)", type=["pdf"])
 
                     if st.form_submit_button("📩 Emitir Solicitação", type="primary"):
                         if dt_prz.weekday() >= 5: st.warning("Escolha dia útil.")
@@ -350,7 +374,6 @@ def tela_solicitacoes():
                                 ws_solic = sh.worksheet("Solicitacoes")
                                 cabs = ws_solic.row_values(1)
                                 
-                                # Verifica cabeçalhos faltantes
                                 required = ["DATA_HORA", "SOLICITANTE", "TIPO", "CODIGO_SAP", "NF", "STATUS", "OBSERVACAO", "DESTINO_NOME", "PRAZO", "EXECUTADO_POR", "EXECUTADO_EM", "ID_SOLICITACAO"]
                                 for r in required:
                                     if r not in cabs:
@@ -379,6 +402,67 @@ def tela_solicitacoes():
 
                                 ws_solic.append_row(nova_linha)
                                 st.success(f"💾 Protocolo {n_id} gerado no Google Sheets!")
+                                
+                                # LÓGICA DE E-MAIL SMTP DA NUVEM COM PDF E FORMATAÇÃO WEG
+                                try:
+                                    ws_cfg = sh.worksheet("Config")
+                                    emails_admin = ws_cfg.cell(2, 1).value
+                                    lista_emails = [e.strip() for e in str(emails_admin).split(";") if e.strip()] if emails_admin else []
+                                except: lista_emails = []
+
+                                email_solicitante = f"{solic.strip().lower()}@weg.net"
+                                if email_solicitante not in lista_emails: lista_emails.append(email_solicitante)
+                                str_emails_destino = "; ".join(lista_emails)
+
+                                if tipo == "SAÍDA":
+                                    assunto = f"Solicitação de Envio de Modelo para {dest} - NF: {nf}"
+                                    corpo = f"""
+                                    <div style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">
+                                        <p>Prezados,</p>
+                                        <p>Solicitamos a retirada do modelo abaixo relacionado junto ao Galpão de Modelos para utilização no processo de fundição/modelação.</p>
+                                        <p><b>Dados do Modelo e prazo de envio:</b></p>
+                                        <ul>
+                                            <li><b>Peça:</b> {desc}</li>
+                                            <li><b>Código SAP:</b> {sap} | <b>Antigo:</b> {ant}</li>
+                                            <li><b>Posição de Retirada:</b> {pos_padrao}</li>
+                                            <li><b>Destino:</b> {dest}</li>
+                                            <li><b>Prazo Máximo:</b> {prz_str}</li>
+                                            <li><b>NF:</b> {nf}</li>
+                                            <li><b>Solicitante:</b> {solic}</li>
+                                        </ul>
+                                        <p><b>Observações:</b> {obs}</p>
+                                        <hr>
+                                        <p style="font-size: 11px; color: #666;">[Protocolo Interno: {n_id}] Mensagem automática gerada pelo App Gestão de Modelos - WEN SZO.</p>
+                                    </div>
+                                    """
+                                else:
+                                    assunto = f"Devolução de Modelo ao Galpão de Modelos - NF: {nf}"
+                                    corpo = f"""
+                                    <div style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">
+                                        <p>Prezados,</p>
+                                        <p>Notificamos que o modelo <b>{sap if sap!='-' else ant} ({desc})</b> está sendo devolvido para WEG sendo necessário recebimento e acondicionamento no Galpão de Modelos.</p>
+                                        <p><b>Previsão de chegada:</b> {prz_str}</p>
+                                        <br>
+                                        <p><b>Detalhes Complementares:</b></p>
+                                        <ul>
+                                            <li><b>Posição Padrão no Galpão:</b> {pos_padrao}</li>
+                                            <li><b>Origem / Fornecedor:</b> {dest}</li>
+                                            <li><b>NF:</b> {nf}</li>
+                                            <li><b>Solicitante:</b> {solic}</li>
+                                        </ul>
+                                        <p><b>Observações:</b> {obs}</p>
+                                        <hr>
+                                        <p style="font-size: 11px; color: #666;">[Protocolo Interno: {n_id}] Mensagem automática gerada pelo App Gestão de Modelos - WEN SZO.</p>
+                                    </div>
+                                    """
+                                
+                                buffer_pdf = arquivo_anexo.read() if arquivo_anexo else None
+                                nome_pdf = f"NF_{nf}.pdf" if arquivo_anexo else None
+                                
+                                st.info("⏳ Enviando notificação oficial por E-mail...")
+                                if enviar_email_gmail(str_emails_destino, assunto, corpo, buffer_pdf, nome_pdf):
+                                    st.success("✉️ E-mail oficial enviado com sucesso!")
+
                                 st.session_state['peca_selecionada'] = ""; st.cache_data.clear()
                             except Exception as e: st.error(f"Erro na Nuvem: {e}")
 
@@ -398,31 +482,92 @@ def tela_solicitacoes():
                 if st.session_state['nivel_id'] in ["0", "1"]:
                     if not ls.empty:
                         st.markdown("---")
-                        nst = st.selectbox("Aplicar Novo Status:", ["Em preparação", "Preparado para carregar/descarregar", "Enviado/Recebido"])
+                        c1, c2 = st.columns(2)
+                        with c1: nst = st.selectbox("Aplicar Novo Status:", ["Em preparação", "Preparado para carregar/descarregar", "Enviado/Recebido"])
+                        with c2: st.markdown("<br>", unsafe_allow_html=True); notificar_solic = st.checkbox("✉️ Notificar Solicitante por e-mail", value=True)
                         
-                        if st.button("🔄 Atualizar Tickets no Google Sheets", type="primary"):
+                        if st.button("🔄 Atualizar Tickets e Concluir Fluxo", type="primary"):
                             try:
                                 ws_solic = sh.worksheet("Solicitacoes")
-                                cabs = ws_solic.row_values(1)
-                                col_id_idx = cabs.index('ID_SOLICITACAO') + 1
-                                col_status_idx = cabs.index('STATUS') + 1
-                                col_exec_por_idx = cabs.index('EXECUTADO_POR') + 1
-                                col_exec_em_idx = cabs.index('EXECUTADO_EM') + 1
+                                cabs_solic = ws_solic.row_values(1)
+                                
+                                ws_base = sh.worksheet("Base")
+                                dados_base = ws_base.get_all_values()
+                                cabs_base = dados_base[0]
+                                
+                                try: ws_hist = sh.worksheet("Historico")
+                                except: ws_hist = None
                                 
                                 h_ex = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-                                todos_ids = ws_solic.col_values(col_id_idx) # Lista de IDs na nuvem
+                                todos_ids = ws_solic.col_values(cabs_solic.index('ID_SOLICITACAO') + 1)
                                 
                                 suc = 0
                                 for _, rw in ls.iterrows():
                                     ida = str(rw.get('ID_SOLICITACAO', '-')).strip()
                                     if ida in todos_ids:
                                         linha_planilha = todos_ids.index(ida) + 1
-                                        ws_solic.update_cell(linha_planilha, col_status_idx, nst)
-                                        ws_solic.update_cell(linha_planilha, col_exec_por_idx, st.session_state['usuario'])
-                                        ws_solic.update_cell(linha_planilha, col_exec_em_idx, h_ex)
+                                        ws_solic.update_cell(linha_planilha, cabs_solic.index('STATUS') + 1, nst)
+                                        ws_solic.update_cell(linha_planilha, cabs_solic.index('EXECUTADO_POR') + 1, st.session_state['usuario'])
+                                        ws_solic.update_cell(linha_planilha, cabs_solic.index('EXECUTADO_EM') + 1, h_ex)
+                                        
+                                        # ==========================================
+                                        # MÁGICA: BAIXA FÍSICA AUTOMÁTICA DA PEÇA!
+                                        # ==========================================
+                                        if nst == "Enviado/Recebido":
+                                            sapa_full = str(rw.get('CODIGO_SAP', '')).strip()
+                                            cod_sap = sapa_full.split(" / ")[0].strip()
+                                            cod_antigo = sapa_full.split(" / ")[1].strip() if " / " in sapa_full else ""
+                                            cod_busca = cod_sap if cod_sap and cod_sap != "-" else cod_antigo
+                                            
+                                            tipo_tk = str(rw.get('TIPO', '')).strip().upper()
+                                            dest_nome = str(rw.get('DESTINO_NOME', '')).strip().upper()
+                                            
+                                            novo_local = "GALPÃO" if tipo_tk == "RETORNO" else dest_nome
+                                            
+                                            linha_alvo_base = None
+                                            for i, linha in enumerate(dados_base[1:], start=2):
+                                                vs = str(linha[cabs_base.index('CODIGO SAP')]).strip().upper() if len(linha) > cabs_base.index('CODIGO SAP') else ""
+                                                va = str(linha[cabs_base.index('CÓDIGO ANTIGO')]).strip().upper() if len(linha) > cabs_base.index('CÓDIGO ANTIGO') else ""
+                                                if cod_busca in [vs, va] and cod_busca != "":
+                                                    linha_alvo_base = i
+                                                    break
+                                            
+                                            if linha_alvo_base:
+                                                loc_atual = str(dados_base[linha_alvo_base-1][cabs_base.index('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)')])
+                                                pos_atual = str(dados_base[linha_alvo_base-1][cabs_base.index('POSIÇÃO GALPÃO')])
+                                                
+                                                ws_base.update_cell(linha_alvo_base, cabs_base.index('ÚLTIMO LOCAL QUE ESTEVE')+1, f"{loc_atual} ({pos_atual})")
+                                                ws_base.update_cell(linha_alvo_base, cabs_base.index('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)')+1, novo_local)
+                                                ws_base.update_cell(linha_alvo_base, cabs_base.index('ÚLTIMA MOVIMENTAÇÃO')+1, h_ex)
+                                                
+                                                if ws_hist:
+                                                    ws_hist.append_row([h_ex, st.session_state['usuario'], sapa_full, f"WORKFLOW CONCLUÍDO ({tipo_tk})", f"{loc_atual} ({pos_atual})", novo_local, f"Doc/NF: {str(rw.get('NF', '-'))}"])
+
+                                        # ==========================================
+                                        # E-MAIL DE ATUALIZAÇÃO PARA SOLICITANTE
+                                        # ==========================================
+                                        if notificar_solic:
+                                            solic_email = str(rw.get('SOLICITANTE', '')).strip()
+                                            if solic_email != "-":
+                                                assunto = f"WEG | Protocolo {ida} Atualizado: {nst}"
+                                                corpo = f"""
+                                                <div style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">
+                                                    <p>Olá {solic_email},</p>
+                                                    <p>O seu Protocolo de Workflow foi atualizado pela equipe do Almoxarifado.</p>
+                                                    <p><b>Novo Status: <span style="color:#005099;">{nst}</span></b></p>
+                                                    <ul>
+                                                        <li><b>Protocolo:</b> {ida}</li>
+                                                        <li><b>Material:</b> {sapa_full}</li>
+                                                        <li><b>Atualizado por:</b> {st.session_state['usuario']}</li>
+                                                        <li><b>Data/Hora:</b> {h_ex}</li>
+                                                    </ul>
+                                                </div>
+                                                """
+                                                enviar_email_gmail(f"{solic_email.lower()}@weg.net", assunto, corpo)
+
                                         suc += 1
                                         
-                                st.success(f"✅ {suc} tickets atualizados na Nuvem!")
+                                st.success(f"✅ {suc} tickets atualizados na Nuvem e baixas físicas processadas!")
                                 st.cache_data.clear()
                                 st.rerun() 
                             except Exception as e: st.error(f"Erro ao salvar: {e}")
@@ -550,7 +695,6 @@ def tela_inventario():
                                             dados_completos = ws_base.get_all_values()
                                             cabecalhos = dados_completos[0]
                                             
-                                            # Garante a coluna de contagem na nuvem
                                             if 'DATA_ULTIMA_CONTAGEM' not in cabecalhos:
                                                 ws_base.update_cell(1, len(cabecalhos)+1, "DATA_ULTIMA_CONTAGEM")
                                                 cabecalhos.append("DATA_ULTIMA_CONTAGEM")
@@ -575,7 +719,7 @@ def tela_inventario():
                                                 
                                                 try:
                                                     ws_hist = sh.worksheet("Historico")
-                                                    ws_hist.append_row([dh, st.session_state['usuario'], cod, "INVENTÁRIO (AJUSTE)", f"{p.get('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', '-')} ({p.get('POSIÇÃO GALPÃO', '-')})", f"{n_loc.upper()} ({n_pos.upper()})", f"Rotina WMS processada por {st.session_state['usuario']}"])
+                                                    ws_hist.append_row([dh, st.session_state['usuario'], cod, "INVENTÁRIO (AJUSTE)", f"{p.get('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', '-')} ({p.get('POSIÇÃO GALPÃO', '-')})", f"{n_loc.upper()} ({n_pos.upper()})", f"Rotina WMS processada por {st.session_state['usuario']} em {dh}"])
                                                 except: pass
 
                                                 if cod in esp: st.session_state['inv_auditados_movidos'].append(cod)
@@ -623,14 +767,12 @@ def tela_inventario():
 
                     dh = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
                     
-                    # Atualiza a data na nuvem para quem foi "OK"
                     for i, linha in enumerate(dados_completos[1:], start=2):
                         vs = str(linha[col_sap]).strip().upper() if len(linha) > col_sap else ""
                         va = str(linha[col_ant]).strip().upper() if len(linha) > col_ant else ""
                         if vs in ok or va in ok:
                             ws_base.update_cell(i, col_ult, dh)
                             
-                    # Gera aba de Relatorio na Nuvem se não tiver
                     try: ws_rel = sh.worksheet("Relatorio_Inventario")
                     except: 
                         ws_rel = sh.add_worksheet(title="Relatorio_Inventario", rows="1000", cols="10")
@@ -642,7 +784,8 @@ def tela_inventario():
                         cabs_rel.append("DOC_INV")
 
                     try:
-                        ids = [int(i) for i in ws_rel.col_values(cabs_rel.index("DOC_INV")+1)[1:] if i.isdigit()]
+                        col_doc_idx = cabs_rel.index("DOC_INV") + 1
+                        ids = [int(i) for i in ws_rel.col_values(col_doc_idx)[1:] if i.isdigit()]
                         n_doc = f"{(max(ids) + 1) if ids else 1:05d}"
                     except: n_doc = "00001"
 
