@@ -18,20 +18,12 @@ st.set_page_config(page_title="Almoxarifado WEG", page_icon="⚙️", layout="wi
 def aplicar_estilo_weg():
     st.markdown("""
         <style>
-        /* 1. FUNDO GERAL AZUL CLARO (Força sobposição ao Dark Mode do usuário) */
-        .stApp, [data-testid="stAppViewContainer"] {
-            background-color: #E6F0FA !important; /* Azul clarinho corporativo */
-        }
-        [data-testid="stHeader"] {
-            background-color: transparent !important;
-        }
-
-        /* 2. TEXTOS COM COR ESCURA NA TELA PRINCIPAL */
+        /* 1. TEXTOS COM COR ESCURA NA TELA PRINCIPAL */
         .stMarkdown p, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4, .stMarkdown h5, .stText, label {
             color: #002B5E !important; 
         }
 
-        /* 3. CONTAINERS/CARTÕES COM FUNDO BRANCO E SOMBRA (Destaque) */
+        /* 2. CONTAINERS/CARTÕES COM FUNDO BRANCO E SOMBRA */
         [data-testid="stVerticalBlockBorderWrapper"] {
             background-color: #FFFFFF !important;
             border: 1px solid #C9DDF0 !important;
@@ -39,12 +31,7 @@ def aplicar_estilo_weg():
             box-shadow: 0 4px 8px rgba(0,0,0,0.05) !important;
         }
 
-        /* Força fundo branco dentro das tabelas/dataframes para evitar o preto do Dark Mode */
-        [data-testid="stDataFrame"] > div {
-            background-color: #FFFFFF !important;
-        }
-
-        /* 4. PROTEÇÃO BLINDADA PARA A SIDEBAR (TUDO BRANCO NO FUNDO AZUL WEG) */
+        /* 3. PROTEÇÃO BLINDADA PARA A SIDEBAR */
         [data-testid="stSidebar"] {background-color: #005099 !important;}
         [data-testid="stSidebar"] *, 
         [data-testid="stSidebar"] p, 
@@ -72,16 +59,16 @@ def aplicar_estilo_weg():
             border: 1px solid white !important;
         }
 
-        /* 5. PROTEÇÃO DO BANNER SUPERIOR (Fundo Gradiente e Letras Brancas) */
+        /* 4. PROTEÇÃO DO BANNER SUPERIOR */
         .weg-banner {background-image: linear-gradient(to right, #003d75 , #005099) !important; padding: 30px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);}
         .weg-banner h1 {color: white !important; margin: 0; font-size: 28px; text-transform: uppercase;}
         .weg-banner p {color: white !important; margin: 5px 0 0 0; font-size: 16px; opacity: 0.9;}
         
-        /* 6. BOTÕES PADRÃO */
+        /* 5. BOTÕES PADRÃO */
         .stButton > button {background-color: #005099 !important; color: white !important; border-radius: 4px; border: none; padding: 10px 24px; font-weight: bold;}
         .stButton > button:hover {background-color: #003d75 !important; border: 1px solid white !important;}
 
-        /* 7. MÉTRICAS (Números grandes nos cards) */
+        /* 6. MÉTRICAS (Números grandes nos cards) */
         [data-testid="stMetricValue"] { color: #005099 !important; font-weight: 800 !important; }
         
         #MainMenu {visibility: hidden;} footer {visibility: hidden;}
@@ -237,41 +224,42 @@ def tela_geral():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # GRÁFICOS COM FUNDO BRANCO FORÇADO
+    # GRÁFICOS (Voltou a usar o theme='streamlit' para ficar harmonioso)
     gc1, gc2 = st.columns(2)
     
     with gc1.container(border=True):
-        st.markdown("<h5 style='text-align: center;'>Distribuição por Setor Físico</h5>", unsafe_allow_html=True)
+        st.markdown("<h5 style='text-align: center; color: #002B5E;'>Distribuição por Setor Físico</h5>", unsafe_allow_html=True)
         df_loc = df_ativos[df_ativos[col_local] != "-"][col_local].value_counts().reset_index()
         df_loc.columns = ['Local', 'Qtd']
         
         if not df_loc.empty:
-            base = alt.Chart(df_loc).encode(
+            base_donut = alt.Chart(df_loc).encode(
                 theta=alt.Theta("Qtd:Q", stack=True),
-                color=alt.Color("Local:N", scale=alt.Scale(scheme='blues'), legend=alt.Legend(title="Setor", orient="bottom", labelColor="#002B5E", titleColor="#002B5E")),
+                color=alt.Color("Local:N", scale=alt.Scale(scheme='blues'), legend=alt.Legend(title="Setor", orient="bottom")),
                 tooltip=['Local', 'Qtd']
             )
-            # Adiciona .configure(background='white') para matar o Dark Mode no gráfico
-            donut = base.mark_arc(innerRadius=60, stroke="#fff").properties(height=320).configure(background='#FFFFFF').configure_view(strokeWidth=0)
-            st.altair_chart(donut, use_container_width=True, theme=None)
+            donut = base_donut.mark_arc(innerRadius=60)
+            # Rótulos de dados no gráfico de Rosca
+            text_donut = base_donut.mark_text(radiusOffset=15, size=14, fontWeight='bold').encode(text='Qtd:Q')
+            
+            st.altair_chart((donut + text_donut).properties(height=320), use_container_width=True, theme="streamlit")
 
     with gc2.container(border=True):
-        st.markdown("<h5 style='text-align: center;'>Categoria de Equipamento</h5>", unsafe_allow_html=True)
+        st.markdown("<h5 style='text-align: center; color: #002B5E;'>Categoria de Equipamento</h5>", unsafe_allow_html=True)
         df_tip = df_ativos[df_ativos[col_tipo] != "-"][col_tipo].value_counts().reset_index()
         df_tip.columns = ['Tipo', 'Qtd']
         
         if not df_tip.empty:
             barras = alt.Chart(df_tip).mark_bar(cornerRadiusEnd=4, height=35).encode(
-                x=alt.X('Qtd:Q', title='Quantidade Total', axis=alt.Axis(grid=False, labelColor="#002B5E", titleColor="#002B5E")),
-                y=alt.Y('Tipo:N', title=None, sort='-x', axis=alt.Axis(labelLimit=200, labelColor="#002B5E")),
+                x=alt.X('Qtd:Q', title='Quantidade Total', axis=alt.Axis(grid=False)),
+                y=alt.Y('Tipo:N', title=None, sort='-x', axis=alt.Axis(labelLimit=200)),
                 color=alt.value('#009EE3'),
                 tooltip=['Tipo', 'Qtd']
             )
+            # Rótulos de dados no gráfico de Barras
             texto_barras = barras.mark_text(align='left', baseline='middle', dx=5, fontWeight='bold', color="#002B5E").encode(text='Qtd:Q')
             
-            # Adiciona .configure(background='white')
-            grafico_barras = (barras + texto_barras).properties(height=320).configure(background='#FFFFFF').configure_view(strokeWidth=0)
-            st.altair_chart(grafico_barras, use_container_width=True, theme=None)
+            st.altair_chart((barras + texto_barras).properties(height=320), use_container_width=True, theme="streamlit")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -290,7 +278,6 @@ def tela_geral():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # BASE DE DADOS COMPLETA DE VOLTA (Em formato de painel container)
     st.markdown("### 🗄️ Base de Dados Completa")
     st.caption("Visão panorâmica para análise linha a linha do WMS.")
     
