@@ -18,15 +18,31 @@ st.set_page_config(page_title="Almoxarifado WEG", page_icon="⚙️", layout="wi
 def aplicar_estilo_weg():
     st.markdown("""
         <style>
-        /* Sidebar base */
-        [data-testid="stSidebar"] {background-color: #005099; color: white;}
+        /* 1. FUNDO GERAL AZUL CLARO (Força sobposição ao Dark Mode do usuário) */
+        .stApp, [data-testid="stAppViewContainer"] {
+            background-color: #E6F0FA !important; /* Azul clarinho corporativo */
+        }
+        [data-testid="stHeader"] {
+            background-color: transparent !important;
+        }
+
+        /* 2. TEXTOS COM COR ESCURA PARA GARANTIR LEITURA NO FUNDO CLARO */
+        .stMarkdown p, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4, .stMarkdown h5, .stText, label {
+            color: #002B5E !important; 
+        }
+
+        /* 3. CONTAINERS/CARTÕES COM FUNDO BRANCO E SOMBRA (Destaque) */
+        [data-testid="stVerticalBlockBorderWrapper"] {
+            background-color: #FFFFFF !important;
+            border: 1px solid #C9DDF0 !important;
+            border-radius: 8px !important;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.05) !important;
+        }
+
+        /* 4. PROTEÇÃO PARA A SIDEBAR (Continua Azul WEG Escuro com letras brancas) */
+        [data-testid="stSidebar"] {background-color: #005099 !important;}
         [data-testid="stSidebar"] * {color: white !important;}
         
-        /* Botões padrão da tela principal */
-        .stButton > button {background-color: #005099; color: white; border-radius: 4px; border: none; padding: 10px 24px; font-weight: bold;}
-        .stButton > button:hover {background-color: #003d75; color: white; border: 1px solid white;}
-        
-        /* Estilo exclusivo para os Botões do Menu na Sidebar */
         [data-testid="stSidebar"] .stButton > button {
             background-color: rgba(255, 255, 255, 0.1) !important;
             border: 1px solid rgba(255, 255, 255, 0.2) !important;
@@ -41,10 +57,17 @@ def aplicar_estilo_weg():
             border: 1px solid white !important;
         }
 
-        #MainMenu {visibility: hidden;} footer {visibility: hidden;}
-        .weg-banner {background-image: linear-gradient(to right, #003d75 , #005099); padding: 30px; border-radius: 5px; color: white; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);}
-        .weg-banner h1 {color: white; margin: 0; font-size: 28px; text-transform: uppercase;}
-        .weg-banner p {margin: 5px 0 0 0; font-size: 16px; opacity: 0.9;}
+        /* 5. PROTEÇÃO DO BANNER SUPERIOR (Fundo Gradiente e Letras Brancas) */
+        .weg-banner {background-image: linear-gradient(to right, #003d75 , #005099) !important; padding: 30px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);}
+        .weg-banner h1 {color: white !important; margin: 0; font-size: 28px; text-transform: uppercase;}
+        .weg-banner p {color: white !important; margin: 5px 0 0 0; font-size: 16px; opacity: 0.9;}
+        
+        /* 6. BOTÕES PADRÃO */
+        .stButton > button {background-color: #005099 !important; color: white !important; border-radius: 4px; border: none; padding: 10px 24px; font-weight: bold;}
+        .stButton > button:hover {background-color: #003d75 !important; border: 1px solid white !important;}
+
+        /* 7. MÉTRICAS (Números grandes nos cards) */
+        [data-testid="stMetricValue"] { color: #005099 !important; font-weight: 800 !important; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -166,7 +189,7 @@ def tela_login():
             except Exception as e: st.error(f"⚠️ Erro ao verificar usuários: {e}")
 
 # ==========================================
-# TELA 1: DASHBOARD GERAL (NOVO LAYOUT MODO ESCURO/CLARO)
+# TELA 1: DASHBOARD GERAL (NOVO LAYOUT AZUL CLARO FORÇADO)
 # ==========================================
 def tela_geral():
     cabecalho_weg()
@@ -184,7 +207,7 @@ def tela_geral():
 
     st.markdown("### 📊 Panorama Geral de Ocupação")
 
-    # MÉTRICAS DENTRO DE CONTAINERS (Para melhor contraste no Modo Escuro)
+    # MÉTRICAS DENTRO DE CONTAINERS BRANCOS
     m1, m2, m3, m4 = st.columns(4)
     with m1.container(border=True):
         st.metric("📦 Peças Ativas (Total)", f"{total_modelos}")
@@ -197,7 +220,7 @@ def tela_geral():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # GRÁFICOS MELHORADOS E ADAPTÁVEIS
+    # GRÁFICOS (Forçando theme=None para impedir que os gráficos fiquem pretos no Dark Mode)
     gc1, gc2 = st.columns(2)
     
     with gc1.container(border=True):
@@ -206,14 +229,14 @@ def tela_geral():
         df_loc.columns = ['Local', 'Qtd']
         
         if not df_loc.empty:
-            # Gráfico de Rosca (Donut) Moderno
             base = alt.Chart(df_loc).encode(
                 theta=alt.Theta("Qtd:Q", stack=True),
                 color=alt.Color("Local:N", scale=alt.Scale(scheme='blues'), legend=alt.Legend(title="Setor", orient="bottom")),
                 tooltip=['Local', 'Qtd']
             )
             donut = base.mark_arc(innerRadius=60, stroke="#fff")
-            st.altair_chart(donut.properties(height=320), use_container_width=True, theme="streamlit")
+            # theme=None garante fundo branco puro no gráfico
+            st.altair_chart(donut.properties(height=320), use_container_width=True, theme=None)
 
     with gc2.container(border=True):
         st.markdown("<h5 style='text-align: center;'>Categoria de Equipamento</h5>", unsafe_allow_html=True)
@@ -221,25 +244,23 @@ def tela_geral():
         df_tip.columns = ['Tipo', 'Qtd']
         
         if not df_tip.empty:
-            # Gráfico de Barras Horizontais (Mais fácil de ler)
             barras = alt.Chart(df_tip).mark_bar(cornerRadiusEnd=4, height=35).encode(
                 x=alt.X('Qtd:Q', title='Quantidade Total', axis=alt.Axis(grid=False)),
                 y=alt.Y('Tipo:N', title=None, sort='-x', axis=alt.Axis(labelLimit=200)),
                 color=alt.value('#009EE3'),
                 tooltip=['Tipo', 'Qtd']
             )
-            texto_barras = barras.mark_text(align='left', baseline='middle', dx=5, fontWeight='bold').encode(text='Qtd:Q')
-            st.altair_chart((barras + texto_barras).properties(height=320), use_container_width=True, theme="streamlit")
+            texto_barras = barras.mark_text(align='left', baseline='middle', dx=5, fontWeight='bold', color="#002B5E").encode(text='Qtd:Q')
+            st.altair_chart((barras + texto_barras).properties(height=320), use_container_width=True, theme=None)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # SUBSTITUI A BASE DE DADOS COMPLETA PELAS "ÚLTIMAS MOVIMENTAÇÕES"
+    # TABELA DAS ÚLTIMAS MOVIMENTAÇÕES
     st.markdown("### ⏱️ Últimas Movimentações Registradas")
     st.caption("Visão rápida das 10 últimas peças que tiveram seus endereços ou status atualizados no sistema.")
     
     with st.container(border=True):
         try:
-            # Criando uma coluna de data temporária para ordenar corretamente
             df_temp = df.copy()
             df_temp['DATA_ORDENACAO'] = pd.to_datetime(df_temp['ÚLTIMA MOVIMENTAÇÃO'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
             df_recentes = df_temp.sort_values(by='DATA_ORDENACAO', ascending=False).head(10)
@@ -248,7 +269,6 @@ def tela_geral():
             
             st.dataframe(df_recentes[colunas_resumo], use_container_width=True, hide_index=True)
         except Exception as e:
-            # Fallback caso a ordenação de data falhe por algum motivo
             st.dataframe(df.head(10), use_container_width=True, hide_index=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
