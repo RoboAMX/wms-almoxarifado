@@ -26,7 +26,7 @@ def aplicar_estilo_weg():
         .stButton > button {background-color: #005099; color: white; border-radius: 4px; border: none; padding: 10px 24px; font-weight: bold;}
         .stButton > button:hover {background-color: #003d75; color: white; border: 1px solid white;}
         
-        /* NOVO: Estilo exclusivo para os Botões do Menu na Sidebar (alinhamento à esquerda e translúcido) */
+        /* Estilo exclusivo para os Botões do Menu na Sidebar (alinhamento à esquerda e translúcido) */
         [data-testid="stSidebar"] .stButton > button {
             background-color: rgba(255, 255, 255, 0.1) !important;
             border: 1px solid rgba(255, 255, 255, 0.2) !important;
@@ -900,30 +900,15 @@ def tela_inventario():
                         else: st.warning("Detalhes não encontrados.")
         except: st.warning("Estrutura do relatório WMS indisponível.")
 
-def tela_administrador():
+# ==========================================
+# TELA 7.1: GESTÃO DE MODELOS (NÍVEL 0)
+# ==========================================
+def tela_gestao_modelos():
     cabecalho_weg()
-    st.markdown("#### Painel de Gestão (Root)")
+    st.markdown("#### Gestão do Cadastro de Peças")
     if st.session_state['nivel_id'] != "0": return st.error("🔒 Restrito a credenciais corporativas Nível 0.")
 
-    aba_novo, aba_desc, aba_user, aba_email = st.tabs(["➕ Cadastrar Novo Modelo", "🗑️ Descartar Peça", "👥 Gerenciar Usuários", "✉️ Config. Alertas"])
-
-    with aba_email:
-        st.markdown("Defina os e-mails padronizados que receberão as notificações de **Nova Solicitação** (separados por ponto-e-vírgula).")
-        atual_emails = carregar_emails_config()
-        with st.form("form_config_email"):
-            emails_input = st.text_input("E-mails de Notificação Padrão:", value=atual_emails, placeholder="exemplo1@weg.net; exemplo2@weg.net")
-            if st.form_submit_button("💾 Salvar Configuração na Nuvem", type="primary"):
-                try:
-                    sh = conectar_planilha()
-                    try: ws_cfg = sh.worksheet("Config")
-                    except: 
-                        ws_cfg = sh.add_worksheet("Config", 10, 2)
-                        ws_cfg.update_cell(1, 1, "EMAILS_ALERTA")
-                        
-                    ws_cfg.update_cell(2, 1, emails_input.strip())
-                    st.cache_data.clear()
-                    st.success("✅ E-mails de alerta configurados com sucesso!")
-                except Exception as e: st.error(f"Erro ao salvar: {e}")
+    aba_novo, aba_desc = st.tabs(["➕ Cadastrar Novo Modelo", "🗑️ Descartar Peça"])
 
     with aba_novo:
         with st.form("form_novo_modelo", clear_on_submit=True):
@@ -1027,6 +1012,20 @@ def tela_administrador():
                                         st.cache_data.clear(); st.rerun()
                                 except Exception as e: st.error(f"Erro: {e}")
 
+# ==========================================
+# TELA 7.2: CONFIG. GLOBAIS (SUPER ADMIN)
+# ==========================================
+def tela_config_globais():
+    cabecalho_weg()
+    st.markdown("#### 🔐 Configurações Globais de Sistema (Super-Admin)")
+    
+    # Validação Dupla de Segurança baseada no nome exato do usuário logado
+    SUPER_ADMINS = ["ROBERTOA", "LIMAM"]
+    if st.session_state['usuario'].upper() not in SUPER_ADMINS:
+        return st.error("🛑 ACESSO NEGADO: Esta área é restrita aos gestores globais do sistema.")
+
+    aba_user, aba_email = st.tabs(["👥 Gerenciar Usuários", "✉️ Config. Alertas de E-mail"])
+
     with aba_user:
         try:
             sh = conectar_planilha()
@@ -1069,6 +1068,25 @@ def tela_administrador():
                                     ws_u.delete_rows(i); st.success("Usuário removido."); st.rerun(); break
         except: st.error("Base de usuários indisponível.")
 
+    with aba_email:
+        st.markdown("Defina os e-mails padronizados que receberão as notificações de **Nova Solicitação** (separados por ponto-e-vírgula).")
+        atual_emails = carregar_emails_config()
+        with st.form("form_config_email"):
+            emails_input = st.text_input("E-mails de Notificação Padrão:", value=atual_emails, placeholder="exemplo1@weg.net; exemplo2@weg.net")
+            if st.form_submit_button("💾 Salvar Configuração na Nuvem", type="primary"):
+                try:
+                    sh = conectar_planilha()
+                    try: ws_cfg = sh.worksheet("Config")
+                    except: 
+                        ws_cfg = sh.add_worksheet("Config", 10, 2)
+                        ws_cfg.update_cell(1, 1, "EMAILS_ALERTA")
+                        
+                    ws_cfg.update_cell(2, 1, emails_input.strip())
+                    st.cache_data.clear()
+                    st.success("✅ E-mails de alerta configurados com sucesso!")
+                except Exception as e: st.error(f"Erro ao salvar: {e}")
+
+
 # ==========================================
 # FLUXO PRINCIPAL DO APLICATIVO E MENU
 # ==========================================
@@ -1080,8 +1098,17 @@ else:
     st.sidebar.markdown("---")
     
     opcoes_menu = ["🏠 Início (Painel Geral)", "🔍 Consulta de Modelos", "📥 Solicitar Envio / Retorno", "📜 Histórico e Rastreabilidade", "📋 Inventário (Contagem)"]
-    if st.session_state['nivel_id'] in ["0", "1"]: opcoes_menu.insert(2, "🔄 Mover Peça (Galpão)") 
-    if st.session_state['nivel_id'] == "0": opcoes_menu.append("⚙️ Administração do Sistema")
+    
+    if st.session_state['nivel_id'] in ["0", "1"]: 
+        opcoes_menu.insert(2, "🔄 Mover Peça (Galpão)") 
+        
+    if st.session_state['nivel_id'] == "0": 
+        opcoes_menu.append("⚙️ Gestão de Modelos")
+        
+    # MENU EXCLUSIVO PARA SUPER ADMINS (Roberto e Limam)
+    SUPER_ADMINS = ["ROBERTO", "LIMAM"]
+    if st.session_state['usuario'].upper() in SUPER_ADMINS:
+        opcoes_menu.append("🔐 Config. Globais (Super Admin)")
 
     if 'menu_lateral_nav' not in st.session_state or st.session_state['menu_lateral_nav'] not in opcoes_menu:
         st.session_state['menu_lateral_nav'] = "🏠 Início (Painel Geral)"
@@ -1131,4 +1158,5 @@ else:
     elif menu_selecionado == "📥 Solicitar Envio / Retorno": tela_solicitacoes()
     elif menu_selecionado == "📜 Histórico e Rastreabilidade": tela_historico()
     elif menu_selecionado == "📋 Inventário (Contagem)": tela_inventario()
-    elif menu_selecionado == "⚙️ Administração do Sistema": tela_administrador()
+    elif menu_selecionado == "⚙️ Gestão de Modelos": tela_gestao_modelos()
+    elif menu_selecionado == "🔐 Config. Globais (Super Admin)": tela_config_globais()
