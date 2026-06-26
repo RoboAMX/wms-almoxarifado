@@ -18,10 +18,29 @@ st.set_page_config(page_title="Almoxarifado WEG", page_icon="⚙️", layout="wi
 def aplicar_estilo_weg():
     st.markdown("""
         <style>
+        /* Sidebar base */
         [data-testid="stSidebar"] {background-color: #005099; color: white;}
         [data-testid="stSidebar"] * {color: white !important;}
+        
+        /* Botões padrão da tela principal */
         .stButton > button {background-color: #005099; color: white; border-radius: 4px; border: none; padding: 10px 24px; font-weight: bold;}
         .stButton > button:hover {background-color: #003d75; color: white; border: 1px solid white;}
+        
+        /* NOVO: Estilo exclusivo para os Botões do Menu na Sidebar (alinhamento à esquerda e translúcido) */
+        [data-testid="stSidebar"] .stButton > button {
+            background-color: rgba(255, 255, 255, 0.1) !important;
+            border: 1px solid rgba(255, 255, 255, 0.2) !important;
+            justify-content: flex-start !important; 
+            text-align: left !important;
+            padding-left: 15px !important;
+            border-radius: 6px !important;
+            font-weight: 600 !important;
+        }
+        [data-testid="stSidebar"] .stButton > button:hover {
+            background-color: rgba(255, 255, 255, 0.25) !important;
+            border: 1px solid white !important;
+        }
+
         #MainMenu {visibility: hidden;} footer {visibility: hidden;}
         .weg-banner {background-image: linear-gradient(to right, #003d75 , #005099); padding: 30px; border-radius: 5px; color: white; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);}
         .weg-banner h1 {color: white; margin: 0; font-size: 28px; text-transform: uppercase;}
@@ -222,22 +241,16 @@ def tela_consulta():
             if item is not None:
                 peca = df_f.loc[item]
                 
-                # ==========================================
-                # NOVO DESIGN DA FICHA TÉCNICA
-                # ==========================================
                 with st.container(border=True):
-                    # Título com a cor WEG
                     st.markdown(f"<h3 style='color: #005099; margin-bottom: 0px;'>⚙️ {peca.get('DESCRIÇÃO', '-')}</h3>", unsafe_allow_html=True)
                     st.markdown("---")
                     
-                    # Destaque principal para a Localização via st.metric
                     loc_col1, loc_col2 = st.columns(2)
                     loc_col1.metric("📍 Localização Atual", peca.get('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', '-'))
                     loc_col2.metric("🗄️ Posição / Slot", peca.get('POSIÇÃO GALPÃO', '-'))
                     
                     st.markdown("---")
                     
-                    # Grade de detalhes dividida em 3 colunas limpas
                     c1, c2, c3 = st.columns(3)
                     
                     with c1:
@@ -257,7 +270,6 @@ def tela_consulta():
                     with c3:
                         st.markdown("##### ⏳ Histórico Sistêmico")
                         st.write(f"**Última Movimentação:** {peca.get('ÚLTIMA MOVIMENTAÇÃO', '-')}")
-                        # Inclusão do Último Local como solicitado
                         st.write(f"**Último Local que Esteve:** {peca.get('ÚLTIMO LOCAL QUE ESTEVE', '-')}")
                     
                     obs = peca.get('OBSERVAÇÃO', '-')
@@ -265,7 +277,6 @@ def tela_consulta():
                         st.markdown("<br>", unsafe_allow_html=True)
                         st.info(f"📝 **Anotação Complementar:** {obs}")
 
-                    # Botões de atalho no final do container
                     st.markdown("---")
                     bc1, bc2 = st.columns(2)
                     cod_mem = peca.get('CODIGO SAP', '-')
@@ -1072,10 +1083,25 @@ else:
     if st.session_state['nivel_id'] in ["0", "1"]: opcoes_menu.insert(2, "🔄 Mover Peça (Galpão)") 
     if st.session_state['nivel_id'] == "0": opcoes_menu.append("⚙️ Administração do Sistema")
 
-    aba_atual = st.session_state.get('menu_lateral_nav')
-    if aba_atual not in opcoes_menu: st.session_state['menu_lateral_nav'] = "🏠 Início (Painel Geral)"
+    if 'menu_lateral_nav' not in st.session_state or st.session_state['menu_lateral_nav'] not in opcoes_menu:
+        st.session_state['menu_lateral_nav'] = "🏠 Início (Painel Geral)"
 
-    menu_selecionado = st.sidebar.radio("Navegação Estrutural:", opcoes_menu, key="menu_lateral_nav")
+    st.sidebar.markdown("### Menu")
+    
+    # Renderizando os botões do Menu na Barra Lateral
+    for opcao in opcoes_menu:
+        is_active = (st.session_state['menu_lateral_nav'] == opcao)
+        
+        # Marcador visual 📍 apenas no menu que está aberto no momento
+        label = f"📍 {opcao}" if is_active else opcao
+        
+        if st.sidebar.button(label, key=f"btn_nav_{opcao}", use_container_width=True):
+            st.session_state['menu_lateral_nav'] = opcao
+            st.rerun()
+
+    # Define qual tela será exibida com base no botão clicado
+    menu_selecionado = st.session_state['menu_lateral_nav']
+    
     st.sidebar.markdown("---")
     
     with st.sidebar.expander("🔑 Minhas Credenciais"):
@@ -1098,6 +1124,7 @@ else:
 
     if st.sidebar.button("🚪 Desconectar", use_container_width=True): st.session_state.clear(); st.rerun()
 
+    # Roteador de Telas
     if menu_selecionado == "🏠 Início (Painel Geral)": tela_geral()
     elif menu_selecionado == "🔍 Consulta de Modelos": tela_consulta()
     elif menu_selecionado == "🔄 Mover Peça (Galpão)": tela_modificar()
