@@ -26,7 +26,7 @@ def aplicar_estilo_weg():
             background-color: transparent !important;
         }
 
-        /* 2. TEXTOS COM COR ESCURA PARA GARANTIR LEITURA NO FUNDO CLARO */
+        /* 2. TEXTOS COM COR ESCURA NA TELA PRINCIPAL */
         .stMarkdown p, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4, .stMarkdown h5, .stText, label {
             color: #002B5E !important; 
         }
@@ -39,10 +39,20 @@ def aplicar_estilo_weg():
             box-shadow: 0 4px 8px rgba(0,0,0,0.05) !important;
         }
 
-        /* 4. PROTEÇÃO PARA A SIDEBAR (Continua Azul WEG Escuro com letras brancas) */
+        /* 4. PROTEÇÃO BLINDADA PARA A SIDEBAR (TUDO BRANCO NO FUNDO AZUL WEG) */
         [data-testid="stSidebar"] {background-color: #005099 !important;}
-        [data-testid="stSidebar"] * {color: white !important;}
+        [data-testid="stSidebar"] *, 
+        [data-testid="stSidebar"] p, 
+        [data-testid="stSidebar"] span, 
+        [data-testid="stSidebar"] div, 
+        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] h1,
+        [data-testid="stSidebar"] h2,
+        [data-testid="stSidebar"] h3 {
+            color: #FFFFFF !important;
+        }
         
+        /* Botões do Menu Lateral */
         [data-testid="stSidebar"] .stButton > button {
             background-color: rgba(255, 255, 255, 0.1) !important;
             border: 1px solid rgba(255, 255, 255, 0.2) !important;
@@ -68,6 +78,8 @@ def aplicar_estilo_weg():
 
         /* 7. MÉTRICAS (Números grandes nos cards) */
         [data-testid="stMetricValue"] { color: #005099 !important; font-weight: 800 !important; }
+        
+        #MainMenu {visibility: hidden;} footer {visibility: hidden;}
         </style>
     """, unsafe_allow_html=True)
 
@@ -189,7 +201,7 @@ def tela_login():
             except Exception as e: st.error(f"⚠️ Erro ao verificar usuários: {e}")
 
 # ==========================================
-# TELA 1: DASHBOARD GERAL (NOVO LAYOUT AZUL CLARO FORÇADO)
+# TELA 1: DASHBOARD GERAL
 # ==========================================
 def tela_geral():
     cabecalho_weg()
@@ -220,7 +232,7 @@ def tela_geral():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # GRÁFICOS (Forçando theme=None para impedir que os gráficos fiquem pretos no Dark Mode)
+    # GRÁFICOS (Forçando theme=None para impedir fundo preto)
     gc1, gc2 = st.columns(2)
     
     with gc1.container(border=True):
@@ -235,7 +247,6 @@ def tela_geral():
                 tooltip=['Local', 'Qtd']
             )
             donut = base.mark_arc(innerRadius=60, stroke="#fff")
-            # theme=None garante fundo branco puro no gráfico
             st.altair_chart(donut.properties(height=320), use_container_width=True, theme=None)
 
     with gc2.container(border=True):
@@ -255,21 +266,12 @@ def tela_geral():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # TABELA DAS ÚLTIMAS MOVIMENTAÇÕES
-    st.markdown("### ⏱️ Últimas Movimentações Registradas")
-    st.caption("Visão rápida das 10 últimas peças que tiveram seus endereços ou status atualizados no sistema.")
+    # BASE DE DADOS COMPLETA DE VOLTA (Em formato de painel container)
+    st.markdown("### 🗄️ Base de Dados Completa")
+    st.caption("Visão panorâmica para análise linha a linha do WMS.")
     
     with st.container(border=True):
-        try:
-            df_temp = df.copy()
-            df_temp['DATA_ORDENACAO'] = pd.to_datetime(df_temp['ÚLTIMA MOVIMENTAÇÃO'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
-            df_recentes = df_temp.sort_values(by='DATA_ORDENACAO', ascending=False).head(10)
-            
-            colunas_resumo = [c for c in ['CODIGO SAP', 'Patrimônio', 'DESCRIÇÃO', 'LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', 'POSIÇÃO GALPÃO', 'ÚLTIMA MOVIMENTAÇÃO'] if c in df_recentes.columns]
-            
-            st.dataframe(df_recentes[colunas_resumo], use_container_width=True, hide_index=True)
-        except Exception as e:
-            st.dataframe(df.head(10), use_container_width=True, hide_index=True)
+        st.dataframe(df, use_container_width=True, height=450)
 
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("🔄 Sincronizar Painel Agora", use_container_width=True): 
