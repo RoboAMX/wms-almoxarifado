@@ -82,7 +82,7 @@ def enviar_email_gmail(destinatarios, assunto, corpo_html, arquivo_pdf=None, nom
 if 'logado' not in st.session_state:
     st.session_state.update({
         'logado': False, 'usuario': "", 'nivel': "", 'nivel_id': "",
-        'menu_lateral_nav': "🏠 Dashboard", 'peca_selecionada': "", 'ultima_busca': "",
+        'menu_lateral_nav': "🏠 Início (Painel Geral)", 'peca_selecionada': "", 'ultima_busca': "",
         'inv_ativo': False, 'inv_local': "", 'inv_esperados': [], 'inv_auditados_ok': [],
         'inv_auditados_movidos': [], 'inv_nao_encontrados': [], 'inv_extras': [], 'inv_key_counter': 0
     })
@@ -190,32 +190,34 @@ def tela_geral():
     if st.button("🔄 Atualizar Dados Agora"): st.cache_data.clear(); st.rerun()
 
 # ==========================================
-# TELA 2: CONSULTA
+# TELA 2: CONSULTA DE MODELOS
 # ==========================================
 def tela_consulta():
     cabecalho_weg()
     df = carregar_base()
     if df.empty: return st.warning("⚠️ Base vazia.")
 
-    busca = st.text_input("🔎 Localizar Modelo (Digite SAP, Antigo ou Descrição):", value=st.session_state['ultima_busca'])
+    busca = st.text_input("🔎 Localizar Peça (Digite SAP, Patrimônio, Antigo ou Descrição):", value=st.session_state['ultima_busca'])
     st.session_state['ultima_busca'] = busca
     st.markdown("---")
     
     if busca:
         termo = busca.upper().strip()
-        cols = [c for c in ['CÓDIGO ANTIGO', 'CODIGO SAP', 'DESCRIÇÃO', 'CÓDIGO PAI', 'MODELO EQUIPAMENTO'] if c in df.columns]
+        # Adicionada a coluna Patrimônio no motor de busca
+        cols = [c for c in ['CÓDIGO ANTIGO', 'CODIGO SAP', 'Patrimônio', 'DESCRIÇÃO', 'CÓDIGO PAI', 'MODELO EQUIPAMENTO'] if c in df.columns]
         mask = pd.Series(False, index=df.index)
         for c in cols: mask |= df[c].astype(str).str.upper().str.contains(termo, na=False)
         df_f = df[mask]
         
-        if df_f.empty: st.warning("Nenhum modelo encontrado.")
+        if df_f.empty: st.warning("Nenhuma peça encontrada com este termo.")
         else:
-            st.success(f"✅ {len(df_f)} modelo(s) encontrado(s)!")
-            st.dataframe(df_f[[c for c in ['CODIGO SAP', 'CÓDIGO ANTIGO', 'DESCRIÇÃO', 'LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)'] if c in df.columns]], use_container_width=True, hide_index=True)
-            st.markdown("#### Ficha Técnica do Modelo")
+            st.success(f"✅ {len(df_f)} peça(s) encontrada(s)!")
+            colunas_resumo = [c for c in ['CODIGO SAP', 'Patrimônio', 'CÓDIGO ANTIGO', 'DESCRIÇÃO', 'LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)'] if c in df.columns]
+            st.dataframe(df_f[colunas_resumo], use_container_width=True, hide_index=True)
+            st.markdown("#### Ficha Técnica Detalhada")
             
             def fmt(idx): return f"SAP: {df_f.loc[idx].get('CODIGO SAP', '-')} | {df_f.loc[idx].get('DESCRIÇÃO', '-')}"
-            item = st.selectbox("Selecione a peça detalhada:", df_f.index.tolist(), format_func=fmt)
+            item = st.selectbox("Selecione a peça:", df_f.index.tolist(), format_func=fmt)
             
             if item is not None:
                 p = df_f.loc[item]
@@ -225,7 +227,9 @@ def tela_consulta():
                     with c1:
                         st.markdown("**Identificação**")
                         st.write(f"**Código SAP:** {p.get('CODIGO SAP', '-')}")
+                        st.write(f"**Patrimônio:** {p.get('Patrimônio', '-')}") # MÁGICA AQUI
                         st.write(f"**Código Antigo:** {p.get('CÓDIGO ANTIGO', '-')}")
+                        st.write(f"**Desenho:** {p.get('DESENHO', '-')}")
                     with c2:
                         st.markdown("**Localização Física**")
                         st.info(f"📍 **Local:** {p.get('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', '-')}")
@@ -242,22 +246,27 @@ def tela_consulta():
                     bc1, bc2 = st.columns(2)
                     cod_mem = p.get('CODIGO SAP', '-')
                     if str(cod_mem).strip() in ["-", ""]: cod_mem = p.get('CÓDIGO ANTIGO', '')
+                    
+                    # Usa os NOMES NOVOS DAS ABAS nos botões de atalho
                     if st.session_state['nivel_id'] in ["0", "1"]:
-                        with bc1: st.button("✏️ Modificar Posição", use_container_width=True, on_click=ir_para_tela, args=("🔄 Movimentação Fís.", cod_mem))
-                    with bc2: st.button("📥 Gerar Nova Solicitação", use_container_width=True, on_click=ir_para_tela, args=("📥 Emissão de Tickets", cod_mem))
+                        with bc1: st.button("✏️ Mover esta Peça", use_container_width=True, on_click=ir_para_tela, args=("🔄 Mover Peça (Galpão)", cod_mem))
+                    with bc2: st.button("📥 Gerar Nova Solicitação", use_container_width=True, on_click=ir_para_tela, args=("📥 Solicitar Envio / Retorno", cod_mem))
 
 # ==========================================
-# TELA 3: MODIFICAR POSIÇÃO (NUVEM 100%)
+# TELA 3: MOVER PEÇA NO GALPÃO
 # ==========================================
 def tela_modificar():
     cabecalho_weg()
-    st.markdown("#### Registrar Movimentação Física no Galpão")
+    st.markdown("#### Registrar Mudança de Endereço Físico")
     df = carregar_base()
     if df.empty: return
 
-    cod = st.text_input("Insira o Código (SAP ou Antigo) para registrar mudança:", value=st.session_state.get('peca_selecionada', '')).strip().upper()
+    cod = st.text_input("Insira o Código (SAP, Patrimônio ou Antigo):", value=st.session_state.get('peca_selecionada', '')).strip().upper()
     if cod:
-        peca_enc = df[(df['CODIGO SAP'].astype(str).str.upper() == cod) | (df['CÓDIGO ANTIGO'].astype(str).str.upper() == cod)]
+        filtro = (df['CODIGO SAP'].astype(str).str.upper() == cod) | (df['CÓDIGO ANTIGO'].astype(str).str.upper() == cod)
+        if 'Patrimônio' in df.columns: filtro |= (df['Patrimônio'].astype(str).str.upper() == cod)
+            
+        peca_enc = df[filtro]
         if peca_enc.empty: st.error("❌ Peça não encontrada.")
         else:
             p = peca_enc.iloc[0]
@@ -273,7 +282,7 @@ def tela_modificar():
                 n_pos = st.text_input("Nova Posição Específica:", value="" if pos_atual == "-" else str(pos_atual))
                 n_obs = st.text_input("Observação / Justificativa (* Obrigatório para Fundição/Modelação):" if n_loc in ["FUNDIÇÃO", "MODELAÇÃO"] else "Observação (Opcional):")
                 
-                if st.form_submit_button("💾 Confirmar Movimentação na Nuvem", type="primary"):
+                if st.form_submit_button("💾 Salvar Movimentação", type="primary"):
                     if not n_pos and n_loc != "DESCARTADO": st.warning("Preencha a Nova Posição.")
                     elif n_loc in ["FUNDIÇÃO", "MODELAÇÃO"] and not n_obs.strip(): st.warning(f"Observação é obrigatória para destino {n_loc}.")
                     else:
@@ -284,12 +293,14 @@ def tela_modificar():
                             cabecalhos = dados_completos[0]
                             col_sap = cabecalhos.index('CODIGO SAP')
                             col_ant = cabecalhos.index('CÓDIGO ANTIGO')
+                            col_pat = cabecalhos.index('Patrimônio') if 'Patrimônio' in cabecalhos else -1
                             
                             linha_alvo_sheets = None
                             for i, linha in enumerate(dados_completos[1:], start=2):
                                 vs = str(linha[col_sap]).strip().upper() if len(linha) > col_sap else ""
                                 va = str(linha[col_ant]).strip().upper() if len(linha) > col_ant else ""
-                                if cod in [vs, va] and cod != "":
+                                vp = str(linha[col_pat]).strip().upper() if col_pat != -1 and len(linha) > col_pat else ""
+                                if cod in [vs, va, vp] and cod != "":
                                     linha_alvo_sheets = i
                                     break
                             
@@ -303,7 +314,7 @@ def tela_modificar():
                                 
                                 try:
                                     ws_hist = sh.worksheet("Historico")
-                                    ws_hist.append_row([dh, st.session_state['usuario'], f"{p.get('CODIGO SAP','-')} / {p.get('CÓDIGO ANTIGO','-')}", "MOVIMENTAÇÃO", f"{loc_atual} ({pos_atual})", f"{n_loc.upper()} ({n_pos.upper()})", n_obs])
+                                    ws_hist.append_row([dh, st.session_state['usuario'], f"{p.get('CODIGO SAP','-')} / {p.get('Patrimônio','-')}", "MOVIMENTAÇÃO", f"{loc_atual} ({pos_atual})", f"{n_loc.upper()} ({n_pos.upper()})", n_obs])
                                 except: pass
                                 
                                 st.cache_data.clear(); st.session_state['peca_selecionada'] = ""; st.rerun()
@@ -322,11 +333,11 @@ def calcular_sla(prazo_str):
     except: return "⚪ INDEFINIDO"
 
 # ==========================================
-# TELA 4: SOLICITAÇÕES
+# TELA 4: WORKFLOW DE SOLICITAÇÕES
 # ==========================================
 def tela_solicitacoes():
     cabecalho_weg()
-    aba1, aba2 = st.tabs(["📝 Nova Solicitação (Workflow)", "🔄 Gerenciar Solicitações"])
+    aba1, aba2 = st.tabs(["📝 Nova Solicitação de Transporte", "🔄 Gestão de Entregas (Almoxarifado)"])
     df = carregar_base()
     
     sh = conectar_planilha()
@@ -337,14 +348,18 @@ def tela_solicitacoes():
     except: df_solic = pd.DataFrame()
 
     with aba1:
-        st.markdown("O prazo respeita a regra de 8 horas úteis.")
-        cod = st.text_input("Código SAP ou Antigo do Material:", value=st.session_state.get('peca_selecionada', '')).strip().upper()
+        st.markdown("Emitir novo pedido de carga/descarga. O prazo respeita a regra de 8 horas úteis.")
+        cod = st.text_input("Código SAP, Patrimônio ou Antigo do Material:", value=st.session_state.get('peca_selecionada', '')).strip().upper()
         if cod and not df.empty:
-            peca_enc = df[(df['CODIGO SAP'].astype(str).str.upper() == cod) | (df['CÓDIGO ANTIGO'].astype(str).str.upper() == cod)]
+            filtro = (df['CODIGO SAP'].astype(str).str.upper() == cod) | (df['CÓDIGO ANTIGO'].astype(str).str.upper() == cod)
+            if 'Patrimônio' in df.columns: filtro |= (df['Patrimônio'].astype(str).str.upper() == cod)
+            peca_enc = df[filtro]
+            
             if peca_enc.empty: st.error("❌ Material não encontrado.")
             else:
                 p = peca_enc.iloc[0]
                 sap, ant, desc, loc_atual, pos_padrao = p.get('CODIGO SAP','-'), p.get('CÓDIGO ANTIGO','-'), p.get('DESCRIÇÃO','-'), p.get('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)','-'), p.get('POSIÇÃO GALPÃO','-')
+                patrimonio = p.get('Patrimônio', '-')
                 
                 ticket_pendente = False
                 id_bloqueio = ""
@@ -352,7 +367,7 @@ def tela_solicitacoes():
                     df_abertos = df_solic[~df_solic['STATUS'].astype(str).str.upper().isin(["ENVIADO/RECEBIDO", "CANCELADO"])]
                     for _, row in df_abertos.iterrows():
                         codigos_ticket = str(row.get('CODIGO_SAP', ''))
-                        if (sap != '-' and sap in codigos_ticket) or (ant != '-' and ant in codigos_ticket):
+                        if (sap != '-' and sap in codigos_ticket) or (ant != '-' and ant in codigos_ticket) or (patrimonio != '-' and patrimonio in codigos_ticket):
                             ticket_pendente = True; id_bloqueio = str(row.get('ID_SOLICITACAO', '-')); break
 
                 if ticket_pendente:
@@ -379,7 +394,7 @@ def tela_solicitacoes():
                             st.markdown("---")
                             arquivo_anexo = st.file_uploader("📎 Anexar NF (PDF opcional)", type=["pdf"])
 
-                        if st.form_submit_button("📩 Emitir Solicitação", type="primary"):
+                        if st.form_submit_button("📩 Emitir Solicitação Oficial", type="primary"):
                             if dt_prz.weekday() >= 5: st.warning("Escolha dia útil.")
                             elif not dest.strip() or not nf.strip(): st.warning("Destino e NF são obrigatórios.")
                             else:
@@ -404,7 +419,8 @@ def tela_solicitacoes():
                                     nova_linha[cabs.index("DATA_HORA")] = dh_agora
                                     nova_linha[cabs.index("SOLICITANTE")] = solic
                                     nova_linha[cabs.index("TIPO")] = tipo
-                                    nova_linha[cabs.index("CODIGO_SAP")] = f"{sap} / {ant}"
+                                    # Inclui o patrimônio na referência do ticket
+                                    nova_linha[cabs.index("CODIGO_SAP")] = f"{sap} / Pat:{patrimonio}"
                                     nova_linha[cabs.index("NF")] = nf
                                     nova_linha[cabs.index("STATUS")] = "Solicitado"
                                     nova_linha[cabs.index("OBSERVACAO")] = obs
@@ -415,9 +431,8 @@ def tela_solicitacoes():
                                     nova_linha[cabs.index("ID_SOLICITACAO")] = n_id
 
                                     ws_solic.append_row(nova_linha)
-                                    st.success(f"💾 Protocolo {n_id} gerado no Google Sheets!")
+                                    st.success(f"💾 Protocolo {n_id} gerado no sistema!")
                                     
-                                    # LÓGICA DE E-MAIL
                                     try:
                                         emails_admin = carregar_emails_config()
                                         lista_emails = [e.strip() for e in str(emails_admin).split(";") if e.strip()] if emails_admin else []
@@ -429,50 +444,27 @@ def tela_solicitacoes():
 
                                     if tipo == "SAÍDA":
                                         assunto = f"Solicitação de Envio de Modelo para {dest} - NF: {nf}"
-                                        corpo = f"""
-                                        <div style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">
+                                        corpo = f"""<div style="font-family: Arial; font-size: 14px;">
                                             <p>Prezados,</p>
-                                            <p>Solicitamos a retirada do modelo abaixo relacionado junto ao Galpão de Modelos para utilização no processo de fundição/modelação.</p>
-                                            <p><b>Dados do Modelo e prazo de envio:</b></p>
-                                            <ul>
-                                                <li><b>Peça:</b> {desc}</li>
-                                                <li><b>Código SAP:</b> {sap} | <b>Antigo:</b> {ant}</li>
-                                                <li><b>Posição de Retirada:</b> {pos_padrao}</li>
-                                                <li><b>Destino:</b> {dest}</li>
-                                                <li><b>Prazo Máximo:</b> {prz_str}</li>
-                                                <li><b>NF:</b> {nf}</li>
-                                                <li><b>Solicitante:</b> {solic}</li>
-                                            </ul>
-                                            <p><b>Observações:</b> {obs}</p>
-                                            <hr>
-                                            <p style="font-size: 11px; color: #666;">[Protocolo Interno: {n_id}] Mensagem automática gerada pelo App Gestão de Modelos - WEN SZO.</p>
-                                        </div>
-                                        """
+                                            <p>Solicitamos a retirada do modelo abaixo relacionado junto ao Galpão para fundição/modelação.</p>
+                                            <ul><li><b>Peça:</b> {desc}</li><li><b>SAP:</b> {sap} | <b>Patrimônio:</b> {patrimonio}</li>
+                                            <li><b>Posição de Retirada:</b> {pos_padrao}</li><li><b>Destino:</b> {dest}</li>
+                                            <li><b>Prazo Máximo:</b> {prz_str}</li><li><b>NF:</b> {nf}</li><li><b>Solicitante:</b> {solic}</li></ul>
+                                            <p><b>Obs:</b> {obs}</p><hr><p style="font-size: 11px;">Protocolo {n_id}</p></div>"""
                                     else:
                                         assunto = f"Devolução de Modelo ao Galpão de Modelos - NF: {nf}"
-                                        corpo = f"""
-                                        <div style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">
+                                        corpo = f"""<div style="font-family: Arial; font-size: 14px;">
                                             <p>Prezados,</p>
-                                            <p>Notificamos que o modelo <b>{sap if sap!='-' else ant} ({desc})</b> está sendo devolvido para WEG sendo necessário recebimento e acondicionamento no Galpão de Modelos.</p>
+                                            <p>Notificamos que o modelo <b>{sap if sap!='-' else patrimonio} ({desc})</b> está sendo devolvido para WEG.</p>
                                             <p><b>Previsão de chegada:</b> {prz_str}</p>
-                                            <br>
-                                            <p><b>Detalhes Complementares:</b></p>
-                                            <ul>
-                                                <li><b>Posição Padrão no Galpão:</b> {pos_padrao}</li>
-                                                <li><b>Origem / Fornecedor:</b> {dest}</li>
-                                                <li><b>NF:</b> {nf}</li>
-                                                <li><b>Solicitante:</b> {solic}</li>
-                                            </ul>
-                                            <p><b>Observações:</b> {obs}</p>
-                                            <hr>
-                                            <p style="font-size: 11px; color: #666;">[Protocolo Interno: {n_id}] Mensagem automática gerada pelo App Gestão de Modelos - WEN SZO.</p>
-                                        </div>
-                                        """
+                                            <ul><li><b>Posição Padrão no Galpão:</b> {pos_padrao}</li><li><b>Fornecedor:</b> {dest}</li>
+                                            <li><b>NF:</b> {nf}</li><li><b>Solicitante:</b> {solic}</li></ul>
+                                            <p><b>Obs:</b> {obs}</p><hr><p style="font-size: 11px;">Protocolo {n_id}</p></div>"""
                                     
                                     buffer_pdf = arquivo_anexo.read() if arquivo_anexo else None
                                     nome_pdf = f"NF_{nf}.pdf" if arquivo_anexo else None
                                     
-                                    st.info("⏳ Enviando notificação oficial por E-mail...")
+                                    st.info("⏳ Enviando E-mail via Gmail...")
                                     if enviar_email_gmail(str_emails_destino, assunto, corpo, buffer_pdf, nome_pdf):
                                         st.success("✉️ E-mail oficial enviado com sucesso!")
 
@@ -485,28 +477,24 @@ def tela_solicitacoes():
             for c in ['DESTINO_NOME', 'PRAZO', 'EXECUTADO_POR', 'EXECUTADO_EM', 'ID_SOLICITACAO']:
                 if c not in df_solic.columns: df_solic[c] = '-'
             df_pend = df_solic[~df_solic['STATUS'].astype(str).str.upper().isin(["ENVIADO/RECEBIDO", "CANCELADO"])].copy()
-            
             if df_pend.empty: st.success("🎉 Todos os fluxos concluídos!")
             else:
                 df_pend['SLA'] = df_pend['PRAZO'].apply(calcular_sla)
                 df_pend.insert(0, "Selecionar", False)
-                
-                st.dataframe(df_pend[["ID_SOLICITACAO", "SLA", "STATUS", "PRAZO", "TIPO", "DESTINO_NOME", "CODIGO_SAP", "SOLICITANTE"]], hide_index=True, use_container_width=True)
-                st.markdown("---")
+                df_ed = st.data_editor(df_pend[["Selecionar", "ID_SOLICITACAO", "SLA", "STATUS", "PRAZO", "TIPO", "DESTINO_NOME", "CODIGO_SAP", "SOLICITANTE"]], hide_index=True, use_container_width=True, disabled=["ID_SOLICITACAO", "SLA", "STATUS", "PRAZO", "TIPO", "DESTINO_NOME", "CODIGO_SAP", "SOLICITANTE"])
+                ls = df_pend.loc[df_ed[df_ed["Selecionar"] == True].index]
                 
                 col_almox, col_compras = st.columns(2)
-                
                 with col_almox:
                     if st.session_state['nivel_id'] in ["0", "1"]:
                         st.subheader("📦 Ações do Almoxarifado")
-                        id_almox = st.selectbox("Selecione o Protocolo para Atualizar Status:", [""] + df_pend['ID_SOLICITACAO'].tolist())
+                        id_almox = st.selectbox("Selecione o Protocolo:", [""] + df_pend['ID_SOLICITACAO'].tolist())
                         nst = st.selectbox("Aplicar Novo Status:", ["Em preparação", "Preparado para carregar/descarregar", "Enviado/Recebido"])
-                        notificar_solic = st.checkbox("✉️ Notificar Solicitante por e-mail", value=True)
+                        notificar_solic = st.checkbox("✉️ Notificar Solicitante", value=True)
                         
                         if st.button("🔄 Confirmar Status", type="primary") and id_almox != "":
                             try:
-                                ws_solic = sh.worksheet("Solicitacoes")
-                                cabs_solic = ws_solic.row_values(1)
+                                cabs_solic = [str(c).strip() for c in ws_solic.row_values(1)]
                                 col_id_idx = cabs_solic.index('ID_SOLICITACAO') + 1
                                 todos_ids = ws_solic.col_values(col_id_idx)
                                 
@@ -517,114 +505,76 @@ def tela_solicitacoes():
                                     ws_solic.update_cell(linha, cabs_solic.index('EXECUTADO_POR') + 1, st.session_state['usuario'])
                                     ws_solic.update_cell(linha, cabs_solic.index('EXECUTADO_EM') + 1, h_ex)
                                     
-                                    # Baixa Física se for Enviado/Recebido
                                     if nst == "Enviado/Recebido":
-                                        tk_sap = ws_solic.cell(linha, cabs_solic.index('CODIGO_SAP') + 1).value
+                                        tk_sap = str(ws_solic.cell(linha, cabs_solic.index('CODIGO_SAP') + 1).value).strip()
                                         tk_tipo = str(ws_solic.cell(linha, cabs_solic.index('TIPO') + 1).value).upper()
                                         tk_dest = str(ws_solic.cell(linha, cabs_solic.index('DESTINO_NOME') + 1).value).upper()
-                                        tk_nf = ws_solic.cell(linha, cabs_solic.index('NF') + 1).value
+                                        tk_nf = str(ws_solic.cell(linha, cabs_solic.index('NF') + 1).value)
                                         
                                         cod_busca = tk_sap.split(" / ")[0].strip()
-                                        if not cod_busca or cod_busca == "-": cod_busca = tk_sap.split(" / ")[1].strip()
+                                        if not cod_busca or cod_busca == "-": cod_busca = tk_sap.split("Pat:")[1].strip() if "Pat:" in tk_sap else tk_sap
                                         
                                         ws_base = sh.worksheet("Base")
                                         dados_base = ws_base.get_all_values()
-                                        cabs_base = dados_base[0]
+                                        cabs_base = [str(c).strip() for c in dados_base[0]]
                                         
                                         linha_base = None
                                         for i, r_base in enumerate(dados_base[1:], start=2):
-                                            if cod_busca in [str(r_base[cabs_base.index('CODIGO SAP')]).strip(), str(r_base[cabs_base.index('CÓDIGO ANTIGO')]).strip()]:
+                                            vb_sap = str(r_base[cabs_base.index('CODIGO SAP')]).strip() if 'CODIGO SAP' in cabs_base else ""
+                                            vb_pat = str(r_base[cabs_base.index('Patrimônio')]).strip() if 'Patrimônio' in cabs_base else ""
+                                            vb_ant = str(r_base[cabs_base.index('CÓDIGO ANTIGO')]).strip() if 'CÓDIGO ANTIGO' in cabs_base else ""
+                                            
+                                            if cod_busca in [vb_sap, vb_pat, vb_ant] and cod_busca != "":
                                                 linha_base = i; break
                                         
                                         if linha_base:
-                                            loc_atual = dados_base[linha_base-1][cabs_base.index('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)')]
-                                            pos_atual = dados_base[linha_base-1][cabs_base.index('POSIÇÃO GALPÃO')]
+                                            loc_atual = str(dados_base[linha_base-2][cabs_base.index('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)')])
+                                            pos_atual = str(dados_base[linha_base-2][cabs_base.index('POSIÇÃO GALPÃO')])
                                             novo_loc = "GALPÃO" if tk_tipo == "RETORNO" else tk_dest
-                                            
                                             ws_base.update_cell(linha_base, cabs_base.index('ÚLTIMO LOCAL QUE ESTEVE')+1, f"{loc_atual} ({pos_atual})")
                                             ws_base.update_cell(linha_base, cabs_base.index('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)')+1, novo_loc)
                                             ws_base.update_cell(linha_base, cabs_base.index('ÚLTIMA MOVIMENTAÇÃO')+1, h_ex)
-                                            
-                                            try:
-                                                ws_hist = sh.worksheet("Historico")
-                                                ws_hist.append_row([h_ex, st.session_state['usuario'], tk_sap, f"WORKFLOW CONCLUÍDO ({tk_tipo})", f"{loc_atual} ({pos_atual})", novo_loc, f"NF: {tk_nf}"])
+                                            try: sh.worksheet("Historico").append_row([h_ex, st.session_state['usuario'], tk_sap, f"WORKFLOW ({tk_tipo})", f"{loc_atual} ({pos_atual})", novo_loc, f"NF: {tk_nf}"])
                                             except: pass
 
-                                    # Notificar Solicitante
                                     if notificar_solic:
                                         solic_email = str(ws_solic.cell(linha, cabs_solic.index('SOLICITANTE') + 1).value).strip()
                                         if solic_email != "-":
-                                            assunto = f"WEG | Protocolo {id_almox} Atualizado: {nst}"
-                                            corpo = f"""
-                                            <div style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">
-                                                <p>Olá {solic_email},</p>
-                                                <p>O seu Protocolo de Workflow foi atualizado pela equipe do Almoxarifado.</p>
-                                                <p><b>Novo Status: <span style="color:#005099;">{nst}</span></b></p>
-                                                <ul>
-                                                    <li><b>Protocolo:</b> {id_almox}</li>
-                                                    <li><b>Material:</b> {tk_sap if nst == 'Enviado/Recebido' else '-'}</li>
-                                                    <li><b>Atualizado por:</b> {st.session_state['usuario']}</li>
-                                                    <li><b>Data/Hora:</b> {h_ex}</li>
-                                                </ul>
-                                            </div>
-                                            """
-                                            enviar_email_gmail(f"{solic_email.lower()}@weg.net", assunto, corpo)
-
-                                    st.success(f"✅ Protocolo {id_almox} atualizado!")
-                                    st.cache_data.clear(); st.rerun() 
+                                            enviar_email_gmail(f"{solic_email.lower()}@weg.net", f"WEG | Protocolo {id_almox} Atualizado: {nst}", f"<p>O Status do Protocolo {id_almox} mudou para <b>{nst}</b> por {st.session_state['usuario']}.</p>")
+                                    st.success(f"✅ Protocolo {id_almox} finalizado!"); st.cache_data.clear(); st.rerun() 
                             except Exception as e: st.error(f"Erro ao salvar: {e}")
 
                 with col_compras:
                     st.subheader("👤 Ações do Solicitante")
                     meus_tickets = df_pend[(df_pend['SOLICITANTE'].str.upper() == st.session_state['usuario']) | (st.session_state['nivel_id'] == "0")]
-                    
-                    if meus_tickets.empty:
-                        st.info("Você não tem protocolos abertos no momento.")
+                    if meus_tickets.empty: st.info("Sem protocolos abertos.")
                     else:
-                        id_edit = st.selectbox("Meus Protocolos Abertos:", [""] + meus_tickets['ID_SOLICITACAO'].tolist())
-                        
+                        id_edit = st.selectbox("Meus Protocolos:", [""] + meus_tickets['ID_SOLICITACAO'].tolist())
                         if id_edit != "":
-                            tk_selecionado = meus_tickets[meus_tickets['ID_SOLICITACAO'] == id_edit].iloc[0]
-                            st.write(f"**Peça:** {tk_selecionado['CODIGO_SAP']} | **Destino:** {tk_selecionado['DESTINO_NOME']}")
-                            
-                            with st.expander("✏️ Editar Informações ou Cancelar"):
+                            tk_sel = meus_tickets[meus_tickets['ID_SOLICITACAO'] == id_edit].iloc[0]
+                            with st.expander("✏️ Editar ou Cancelar"):
                                 with st.form("form_edit_ticket"):
-                                    n_nf = st.text_input("Nova NF:", value=tk_selecionado['NF'])
-                                    n_dest = st.text_input("Novo Destino:", value=tk_selecionado['DESTINO_NOME'])
-                                    n_obs = st.text_input("Nova Observação:", value=tk_selecionado['OBSERVACAO'])
-                                    
+                                    n_nf = st.text_input("Nova NF:", value=tk_sel['NF'])
+                                    n_dest = st.text_input("Novo Destino:", value=tk_sel['DESTINO_NOME'])
+                                    n_obs = st.text_input("Nova Observação:", value=tk_sel['OBSERVACAO'])
                                     col_e1, col_e2 = st.columns(2)
-                                    btn_salvar_edit = col_e1.form_submit_button("💾 Salvar Alterações", type="primary")
-                                    btn_cancelar_tk = col_e2.form_submit_button("🗑️ Excluir (Cancelar) Protocolo")
-                                    
-                                    if btn_salvar_edit:
+                                    if col_e1.form_submit_button("💾 Salvar Alterações", type="primary"):
                                         try:
-                                            ws_solic = sh.worksheet("Solicitacoes")
-                                            cabs = ws_solic.row_values(1)
-                                            todos_ids = ws_solic.col_values(cabs.index('ID_SOLICITACAO') + 1)
-                                            linha = todos_ids.index(id_edit) + 1
-                                            
+                                            cabs = [str(c).strip() for c in ws_solic.row_values(1)]
+                                            linha = ws_solic.col_values(cabs.index('ID_SOLICITACAO') + 1).index(id_edit) + 1
                                             ws_solic.update_cell(linha, cabs.index('NF') + 1, n_nf)
                                             ws_solic.update_cell(linha, cabs.index('DESTINO_NOME') + 1, n_dest)
                                             ws_solic.update_cell(linha, cabs.index('OBSERVACAO') + 1, n_obs)
-                                            st.success("✅ Informações atualizadas!")
-                                            st.cache_data.clear(); st.rerun()
+                                            st.success("✅ Atualizado!"); st.cache_data.clear(); st.rerun()
                                         except Exception as e: st.error(e)
-                                        
-                                    if btn_cancelar_tk:
+                                    if col_e2.form_submit_button("🗑️ Cancelar Protocolo"):
                                         try:
-                                            ws_solic = sh.worksheet("Solicitacoes")
-                                            cabs = ws_solic.row_values(1)
-                                            todos_ids = ws_solic.col_values(cabs.index('ID_SOLICITACAO') + 1)
-                                            linha = todos_ids.index(id_edit) + 1
-                                            
+                                            cabs = [str(c).strip() for c in ws_solic.row_values(1)]
+                                            linha = ws_solic.col_values(cabs.index('ID_SOLICITACAO') + 1).index(id_edit) + 1
                                             ws_solic.update_cell(linha, cabs.index('STATUS') + 1, "CANCELADO")
                                             ws_solic.update_cell(linha, cabs.index('EXECUTADO_POR') + 1, st.session_state['usuario'])
                                             ws_solic.update_cell(linha, cabs.index('EXECUTADO_EM') + 1, datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
-                                            ws_solic.update_cell(linha, cabs.index('OBSERVACAO') + 1, "Cancelado pelo Solicitante.")
-                                            
-                                            st.success("🚫 Protocolo cancelado e removido da fila!")
-                                            st.cache_data.clear(); st.rerun()
+                                            st.success("🚫 Cancelado!"); st.cache_data.clear(); st.rerun()
                                         except Exception as e: st.error(e)
 
 # ==========================================
@@ -634,7 +584,6 @@ def tela_historico():
     cabecalho_weg()
     st.markdown("#### Portal de Auditoria Documental")
     aba1, aba2 = st.tabs(["🔄 Auditoria de Endereçamentos", "📥 Extrato de Protocolos (Workflow)"])
-    
     sh = conectar_planilha()
     
     with aba1:
@@ -644,7 +593,7 @@ def tela_historico():
         except: df_hist = pd.DataFrame()
 
         if not df_hist.empty:
-            busca_hist = st.text_input("🔎 Localizar na Trilha de Auditoria (SAP, Login ou Setor):")
+            busca_hist = st.text_input("🔎 Localizar na Trilha de Auditoria:")
             if busca_hist:
                 termo = busca_hist.upper().strip()
                 mask = pd.Series(False, index=df_hist.index)
@@ -652,8 +601,7 @@ def tela_historico():
                 df_hist_filtrado = df_hist[mask]
                 if df_hist_filtrado.empty: st.warning("Nenhum dado encontrado.")
                 else: st.dataframe(df_hist_filtrado.iloc[::-1], use_container_width=True, hide_index=True)
-            else:
-                st.dataframe(df_hist.iloc[::-1], use_container_width=True, hide_index=True)
+            else: st.dataframe(df_hist.iloc[::-1], use_container_width=True, hide_index=True)
 
     with aba2:
         try:
@@ -662,7 +610,7 @@ def tela_historico():
         except: df_solic = pd.DataFrame()
 
         if not df_solic.empty:
-            busca_solic = st.text_input("🔎 Localizar Protocolo por ID, Documento ou Solicitante:")
+            busca_solic = st.text_input("🔎 Localizar Protocolo:")
             if busca_solic:
                 termo2 = busca_solic.upper().strip()
                 mask2 = pd.Series(False, index=df_solic.index)
@@ -670,8 +618,7 @@ def tela_historico():
                 df_solic_filtrado = df_solic[mask2]
                 if df_solic_filtrado.empty: st.warning("Documento não encontrado.")
                 else: st.dataframe(df_solic_filtrado.iloc[::-1], use_container_width=True, hide_index=True)
-            else:
-                st.dataframe(df_solic.iloc[::-1], use_container_width=True, hide_index=True)
+            else: st.dataframe(df_solic.iloc[::-1], use_container_width=True, hide_index=True)
 
 # ==========================================
 # TELA 6: INVENTARIO WMS
@@ -679,7 +626,7 @@ def tela_historico():
 def tela_inventario():
     cabecalho_weg()
     st.markdown("#### Rotina de Contagem Cíclica (WMS)")
-    if st.session_state['nivel_id'] == "2": return st.error("🔒 Perfil não autorizado para auditoria de WMS.")
+    if st.session_state['nivel_id'] == "2": return st.error("🔒 Perfil não autorizado.")
     df = carregar_base()
     if df.empty: return st.warning("⚠️ Base indisponível.")
 
@@ -691,32 +638,31 @@ def tela_inventario():
         with col2: loc_alvo = st.selectbox("Área Abrangente:", ["TODOS", "GALPÃO", "FUNDIÇÃO", "MODELAÇÃO"])
 
         if st.button("🚀 Processar Plano de Contagem", type="primary"):
-            if not pos_alvo.strip() and loc_alvo == "TODOS": st.warning("Defina um perímetro para o plano.")
+            if not pos_alvo.strip() and loc_alvo == "TODOS": st.warning("Defina um perímetro.")
             else:
                 st.session_state['inv_key_counter'] += 1 
                 for k in ['inv_auditados_ok', 'inv_auditados_movidos', 'inv_nao_encontrados', 'inv_extras']: st.session_state[k] = []
                 filtro = pd.Series(True, index=df.index)
                 if pos_alvo.strip(): filtro &= df['POSIÇÃO GALPÃO'].astype(str).str.upper().str.contains(pos_alvo.upper().strip(), na=False)
                 if loc_alvo != "TODOS": filtro &= df['LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)'].astype(str).str.upper().str.contains(loc_alvo, na=False)
-                
                 df_esp = df[filtro]
                 n_inv = pos_alvo.upper().strip() if pos_alvo.strip() else loc_alvo
-                if df_esp.empty: st.warning(f"Sem itens mapeados para a área {n_inv}.")
+                if df_esp.empty: st.warning(f"Sem itens mapeados.")
                 else:
                     ls_saps = []
                     for _, r in df_esp.iterrows():
-                        s, a = str(r.get('CODIGO SAP','-')).strip(), str(r.get('CÓDIGO ANTIGO','-')).strip()
+                        s, a, p = str(r.get('CODIGO SAP','-')).strip(), str(r.get('CÓDIGO ANTIGO','-')).strip(), str(r.get('Patrimônio','-')).strip()
                         if s != '-': ls_saps.append(s)
+                        elif p != '-': ls_saps.append(p)
                         elif a != '-': ls_saps.append(a)
                     st.session_state['inv_ativo'], st.session_state['inv_local'], st.session_state['inv_esperados'] = True, n_inv, list(set(ls_saps))
-                    st.success(f"✅ Plano validado. Total mapeado: {len(ls_saps)} item(ns). Avance para a aba de Campo.")
+                    st.success(f"✅ Plano validado. Vá para a aba de Campo.")
 
     with aba_exec:
         if not st.session_state['inv_ativo']: st.info("Gere o Plano primeiro.")
         else:
             esp, ok, mov, nao_enc, ext = st.session_state['inv_esperados'], st.session_state['inv_auditados_ok'], st.session_state['inv_auditados_movidos'], st.session_state['inv_nao_encontrados'], st.session_state['inv_extras']
             t_esp, t_aud = len(esp), len(ok) + len(mov) + len(nao_enc)
-            
             st.markdown(f"#### Coleta de Dados: **{st.session_state['inv_local']}**")
             if t_esp > 0: st.progress(min(t_aud / t_esp, 1.0))
             
@@ -725,10 +671,13 @@ def tela_inventario():
 
             cod = st.text_input("Bipagem Sistêmica (Insira o Código):", key=f"input_inv_{st.session_state['inv_key_counter']}").strip().upper()
             if cod:
-                if cod in ok or cod in mov or cod in nao_enc or cod in ext: st.warning("Código com leitura já consolidada neste ciclo.")
+                if cod in ok or cod in mov or cod in nao_enc or cod in ext: st.warning("Código já consolidado.")
                 else:
-                    p_bip = df[(df['CODIGO SAP'].astype(str).str.upper() == cod) | (df['CÓDIGO ANTIGO'].astype(str).str.upper() == cod)]
-                    if p_bip.empty: st.error("Aviso: Registro mestre não localizado.")
+                    filtro_ex = (df['CODIGO SAP'].astype(str).str.upper() == cod) | (df['CÓDIGO ANTIGO'].astype(str).str.upper() == cod)
+                    if 'Patrimônio' in df.columns: filtro_ex |= (df['Patrimônio'].astype(str).str.upper() == cod)
+                    p_bip = df[filtro_ex]
+                    
+                    if p_bip.empty: st.error("Registro não localizado.")
                     else:
                         p = p_bip.iloc[0]
                         st.info(f"**Vínculo no WMS:** {p.get('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', '-')} | Slot: {p.get('POSIÇÃO GALPÃO', '-')}")
@@ -752,34 +701,26 @@ def tela_inventario():
                                         try:
                                             sh = conectar_planilha()
                                             ws_base = sh.worksheet("Base")
-                                            dados_completos = ws_base.get_all_values()
-                                            cabecalhos = dados_completos[0]
-                                            
-                                            if 'DATA_ULTIMA_CONTAGEM' not in cabecalhos:
-                                                ws_base.update_cell(1, len(cabecalhos)+1, "DATA_ULTIMA_CONTAGEM")
-                                                cabecalhos.append("DATA_ULTIMA_CONTAGEM")
-                                                
-                                            col_sap = cabecalhos.index('CODIGO SAP')
-                                            col_ant = cabecalhos.index('CÓDIGO ANTIGO')
+                                            cabs = [str(c).strip() for c in ws_base.row_values(1)]
+                                            if 'DATA_ULTIMA_CONTAGEM' not in cabs:
+                                                cabs.append("DATA_ULTIMA_CONTAGEM"); ws_base.update_cell(1, len(cabs), "DATA_ULTIMA_CONTAGEM")
                                             
                                             linha_alvo = None
+                                            dados_completos = ws_base.get_all_values()
                                             for i, linha in enumerate(dados_completos[1:], start=2):
-                                                vs = str(linha[col_sap]).strip().upper() if len(linha) > col_sap else ""
-                                                va = str(linha[col_ant]).strip().upper() if len(linha) > col_ant else ""
-                                                if cod in [vs, va] and cod != "":
-                                                    linha_alvo = i; break
+                                                vs = str(linha[cabs.index('CODIGO SAP')]).strip().upper() if 'CODIGO SAP' in cabs else ""
+                                                va = str(linha[cabs.index('CÓDIGO ANTIGO')]).strip().upper() if 'CÓDIGO ANTIGO' in cabs else ""
+                                                vp = str(linha[cabs.index('Patrimônio')]).strip().upper() if 'Patrimônio' in cabs else ""
+                                                if cod in [vs, va, vp] and cod != "": linha_alvo = i; break
                                             
                                             if linha_alvo:
                                                 dh = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-                                                ws_base.update_cell(linha_alvo, cabecalhos.index('ÚLTIMO LOCAL QUE ESTEVE')+1, f"{p.get('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', '-')} ({p.get('POSIÇÃO GALPÃO', '-')})")
-                                                ws_base.update_cell(linha_alvo, cabecalhos.index('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)')+1, n_loc.upper())
-                                                ws_base.update_cell(linha_alvo, cabecalhos.index('POSIÇÃO GALPÃO')+1, n_pos.upper())
-                                                ws_base.update_cell(linha_alvo, cabecalhos.index('ÚLTIMA MOVIMENTAÇÃO')+1, dh)
-                                                ws_base.update_cell(linha_alvo, cabecalhos.index('DATA_ULTIMA_CONTAGEM')+1, dh)
-                                                
-                                                try:
-                                                    ws_hist = sh.worksheet("Historico")
-                                                    ws_hist.append_row([dh, st.session_state['usuario'], cod, "INVENTÁRIO (AJUSTE)", f"{p.get('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', '-')} ({p.get('POSIÇÃO GALPÃO', '-')})", f"{n_loc.upper()} ({n_pos.upper()})", f"Rotina WMS processada por {st.session_state['usuario']}"])
+                                                ws_base.update_cell(linha_alvo, cabs.index('ÚLTIMO LOCAL QUE ESTEVE')+1, f"{p.get('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', '-')} ({p.get('POSIÇÃO GALPÃO', '-')})")
+                                                ws_base.update_cell(linha_alvo, cabs.index('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)')+1, n_loc.upper())
+                                                ws_base.update_cell(linha_alvo, cabs.index('POSIÇÃO GALPÃO')+1, n_pos.upper())
+                                                ws_base.update_cell(linha_alvo, cabs.index('ÚLTIMA MOVIMENTAÇÃO')+1, dh)
+                                                ws_base.update_cell(linha_alvo, cabs.index('DATA_ULTIMA_CONTAGEM')+1, dh)
+                                                try: sh.worksheet("Historico").append_row([dh, st.session_state['usuario'], cod, "INVENTÁRIO (AJUSTE)", f"{p.get('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', '-')} ({p.get('POSIÇÃO GALPÃO', '-')})", f"{n_loc.upper()} ({n_pos.upper()})", f"WMS por {st.session_state['usuario']}"])
                                                 except: pass
 
                                                 if cod in esp: st.session_state['inv_auditados_movidos'].append(cod)
@@ -789,16 +730,19 @@ def tela_inventario():
 
             st.markdown("---")
             t_ex = esp + ext
-            df_lst = df[df['CODIGO SAP'].isin(t_ex) | df['CÓDIGO ANTIGO'].isin(t_ex)].copy()
+            filtro_lista = (df['CODIGO SAP'].isin(t_ex)) | (df['CÓDIGO ANTIGO'].isin(t_ex))
+            if 'Patrimônio' in df.columns: filtro_lista |= df['Patrimônio'].isin(t_ex)
+            
+            df_lst = df[filtro_lista].copy()
             if not df_lst.empty:
-                df_ex = df_lst[[c for c in ['CODIGO SAP', 'CÓDIGO ANTIGO', 'DESCRIÇÃO', 'POSIÇÃO GALPÃO'] if c in df_lst.columns]].copy()
+                df_ex = df_lst[[c for c in ['CODIGO SAP', 'Patrimônio', 'CÓDIGO ANTIGO', 'DESCRIÇÃO', 'POSIÇÃO GALPÃO'] if c in df_lst.columns]].copy()
                 def st_cont(rw):
-                    s, a = str(rw.get('CODIGO SAP','-')).strip(), str(rw.get('CÓDIGO ANTIGO','-')).strip()
-                    if s in ok or a in ok: return "Consolidado"
-                    if s in mov or a in mov: return "Ajustado"
-                    if s in ext or a in ext: return "Sobressalente"
-                    if s in nao_enc or a in nao_enc: return "Desvio Identificado"
-                    return "Pendente"
+                    s, a, p = str(rw.get('CODIGO SAP','-')).strip(), str(rw.get('CÓDIGO ANTIGO','-')).strip(), str(rw.get('Patrimônio','-')).strip()
+                    if s in ok or a in ok or p in ok: return "✅ Conforme"
+                    if s in mov or a in mov or p in mov: return "🔄 Ajustado"
+                    if s in ext or a in ext or p in ext: return "⭐ Extra (Achado)"
+                    if s in nao_enc or a in nao_enc or p in nao_enc: return "🚨 Faltante"
+                    return "⏳ Aguardando"
                 df_ex['Status Operacional'] = df_ex.apply(st_cont, axis=1)
                 df_ex.sort_values(by='Status Operacional', ascending=False, inplace=True)
                 st.dataframe(df_ex, use_container_width=True, hide_index=True)
@@ -815,53 +759,46 @@ def tela_inventario():
                     sh = conectar_planilha()
                     ws_base = sh.worksheet("Base")
                     dados_completos = ws_base.get_all_values()
-                    cabecalhos = dados_completos[0]
+                    cabecalhos = [str(c).strip() for c in dados_completos[0]]
                     
                     if 'DATA_ULTIMA_CONTAGEM' not in cabecalhos:
-                        ws_base.update_cell(1, len(cabecalhos)+1, "DATA_ULTIMA_CONTAGEM")
                         cabecalhos.append("DATA_ULTIMA_CONTAGEM")
-
-                    col_sap = cabecalhos.index('CODIGO SAP')
-                    col_ant = cabecalhos.index('CÓDIGO ANTIGO')
-                    col_ult = cabecalhos.index('DATA_ULTIMA_CONTAGEM') + 1
+                        ws_base.update_cell(1, len(cabecalhos), "DATA_ULTIMA_CONTAGEM")
 
                     dh = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-                    
                     for i, linha in enumerate(dados_completos[1:], start=2):
-                        vs = str(linha[col_sap]).strip().upper() if len(linha) > col_sap else ""
-                        va = str(linha[col_ant]).strip().upper() if len(linha) > col_ant else ""
-                        if vs in ok or va in ok:
-                            ws_base.update_cell(i, col_ult, dh)
+                        vs = str(linha[cabecalhos.index('CODIGO SAP')]).strip().upper() if 'CODIGO SAP' in cabecalhos else ""
+                        va = str(linha[cabecalhos.index('CÓDIGO ANTIGO')]).strip().upper() if 'CÓDIGO ANTIGO' in cabecalhos else ""
+                        vp = str(linha[cabecalhos.index('Patrimônio')]).strip().upper() if 'Patrimônio' in cabecalhos else ""
+                        if vs in ok or va in ok or vp in ok:
+                            ws_base.update_cell(i, cabecalhos.index('DATA_ULTIMA_CONTAGEM')+1, dh)
                             
                     try: ws_rel = sh.worksheet("Relatorio_Inventario")
-                    except: 
-                        ws_rel = sh.add_worksheet(title="Relatorio_Inventario", rows="1000", cols="10")
-                        ws_rel.append_row(["DOC_INV", "DATA", "USUARIO", "LOCAL_CONTADO", "QTD_ESPERADA", "CORRETAS", "CORRIGIDAS", "FALTANTES"])
+                    except: ws_rel = sh.add_worksheet(title="Relatorio_Inventario", rows="1000", cols="10")
                     
-                    cabs_rel = ws_rel.row_values(1)
-                    if "DOC_INV" not in cabs_rel:
-                        ws_rel.update_cell(1, len(cabs_rel)+1, "DOC_INV")
-                        cabs_rel.append("DOC_INV")
+                    cabs_rel = [str(c).strip() for c in ws_rel.row_values(1)]
+                    col_req = ["DOC_INV", "DATA", "USUARIO", "LOCAL_CONTADO", "QTD_ESPERADA", "CORRETAS", "CORRIGIDAS", "FALTANTES"]
+                    for cr in col_req:
+                        if cr not in cabs_rel:
+                            cabs_rel.append(cr); ws_rel.update_cell(1, len(cabs_rel), cr)
 
                     try:
                         col_doc_idx = cabs_rel.index("DOC_INV") + 1
-                        ids = [int(i) for i in ws_rel.col_values(col_doc_idx)[1:] if i.isdigit()]
+                        ids = [int(i) for i in ws_rel.col_values(col_doc_idx)[1:] if str(i).isdigit()]
                         n_doc = f"{(max(ids) + 1) if ids else 1:05d}"
                     except: n_doc = "00001"
 
-                    nova_linha_rel = ["" for _ in range(len(cabs_rel))]
-                    nova_linha_rel[cabs_rel.index("DOC_INV")] = n_doc
-                    nova_linha_rel[cabs_rel.index("DATA")] = dh
-                    nova_linha_rel[cabs_rel.index("USUARIO")] = st.session_state['usuario']
-                    nova_linha_rel[cabs_rel.index("LOCAL_CONTADO")] = st.session_state['inv_local']
-                    nova_linha_rel[cabs_rel.index("QTD_ESPERADA")] = len(esp)
-                    nova_linha_rel[cabs_rel.index("CORRETAS")] = len(ok)
-                    nova_linha_rel[cabs_rel.index("CORRIGIDAS")] = len(mov) + len(ext)
-                    nova_linha_rel[cabs_rel.index("FALTANTES")] = len(nao_enc) + len(nao_aud)
-
-                    ws_rel.append_row(nova_linha_rel)
+                    nl = ["" for _ in range(len(cabs_rel))]
+                    nl[cabs_rel.index("DOC_INV")] = n_doc
+                    nl[cabs_rel.index("DATA")] = dh
+                    nl[cabs_rel.index("USUARIO")] = st.session_state['usuario']
+                    nl[cabs_rel.index("LOCAL_CONTADO")] = st.session_state['inv_local']
+                    nl[cabs_rel.index("QTD_ESPERADA")] = len(esp)
+                    nl[cabs_rel.index("CORRETAS")] = len(ok)
+                    nl[cabs_rel.index("CORRIGIDAS")] = len(mov) + len(ext)
+                    nl[cabs_rel.index("FALTANTES")] = len(nao_enc) + len(nao_aud)
+                    ws_rel.append_row(nl)
                     
-                    # === NOVO: GRAVAÇÃO DO RELATÓRIO DETALHADO (ITEM A ITEM) ===
                     try: ws_itens = sh.worksheet("Inventario_Itens")
                     except:
                         ws_itens = sh.add_worksheet(title="Inventario_Itens", rows="1000", cols="10")
@@ -869,30 +806,30 @@ def tela_inventario():
                     
                     linhas_detalhes = []
                     todos_envolvidos = list(set(esp + ext))
-                    df_inv = df[df['CODIGO SAP'].isin(todos_envolvidos) | df['CÓDIGO ANTIGO'].isin(todos_envolvidos)]
+                    f_inv = (df['CODIGO SAP'].isin(todos_envolvidos)) | (df['CÓDIGO ANTIGO'].isin(todos_envolvidos))
+                    if 'Patrimônio' in df.columns: f_inv |= df['Patrimônio'].isin(todos_envolvidos)
+                    df_inv = df[f_inv]
                     
                     for _, r in df_inv.iterrows():
-                        s = str(r.get('CODIGO SAP', '-')).strip()
-                        a = str(r.get('CÓDIGO ANTIGO', '-')).strip()
-                        cod_exibir = s if s != '-' else a
+                        s, a, p = str(r.get('CODIGO SAP', '-')).strip(), str(r.get('CÓDIGO ANTIGO', '-')).strip(), str(r.get('Patrimônio', '-')).strip()
+                        cod_exibir = s if s != '-' else p if p != '-' else a
                         desc = str(r.get('DESCRIÇÃO', '-'))
                         loc = str(r.get('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', '-'))
                         pos = str(r.get('POSIÇÃO GALPÃO', '-'))
                         end_final = f"{loc} ({pos})"
                         
-                        if s in ok or a in ok: st_txt = "✅ Conforme"
-                        elif s in mov or a in mov: st_txt = "🔄 Endereço Corrigido"
-                        elif s in ext or a in ext: st_txt = "⭐ Extra (Achado)"
-                        elif s in nao_enc or a in nao_enc or s in nao_aud or a in nao_aud: st_txt = "🚨 Faltante"
+                        if s in ok or a in ok or p in ok: st_txt = "✅ Conforme"
+                        elif s in mov or a in mov or p in mov: st_txt = "🔄 Endereço Corrigido"
+                        elif s in ext or a in ext or p in ext: st_txt = "⭐ Extra (Achado)"
+                        elif s in nao_enc or a in nao_enc or s in nao_aud or a in nao_aud or p in nao_enc or p in nao_aud: st_txt = "🚨 Faltante"
                         else: st_txt = "⚪ Indefinido"
                         
                         linhas_detalhes.append([n_doc, dh, cod_exibir, desc, st_txt, end_final, st.session_state['usuario']])
                         
-                    if linhas_detalhes:
-                        ws_itens.append_rows(linhas_detalhes)
+                    if linhas_detalhes: ws_itens.append_rows(linhas_detalhes)
 
                     st.cache_data.clear(); st.session_state['inv_ativo'] = False
-                    st.success(f"✅ Doc.Inv. {n_doc} homologado com sucesso na nuvem com Detalhamento Item a Item!"); st.rerun()
+                    st.success(f"✅ Doc.Inv. {n_doc} homologado na nuvem!"); st.rerun()
                 except Exception as e: st.error(f"Falha na homologação: {e}")
 
     with aba_hist:
@@ -901,7 +838,6 @@ def tela_inventario():
             sh = conectar_planilha()
             df_rel = pd.DataFrame(sh.worksheet("Relatorio_Inventario").get_all_records()).astype(str)
             df_rel.replace(["", "None", "nan", "NaN"], "-", inplace=True)
-            
             try:
                 df_itens = pd.DataFrame(sh.worksheet("Inventario_Itens").get_all_records()).astype(str)
                 df_itens.replace(["", "None", "nan", "NaN"], "-", inplace=True)
@@ -925,90 +861,80 @@ def tela_inventario():
                 if not df_itens.empty:
                     st.markdown("---")
                     st.markdown("### 🔍 Detalhamento do Inventário (Item a Item)")
-                    doc_selecionado = st.selectbox("Selecione um Doc.Inv para ver o detalhamento completo:", [""] + dfs['DOC_INV'].tolist()[::-1])
-                    if doc_selecionado != "":
-                        df_itens_doc = df_itens[df_itens['DOC_INV'] == doc_selecionado]
-                        if not df_itens_doc.empty:
-                            df_itens_doc.sort_values(by='STATUS_CONTAGEM', ascending=False, inplace=True)
-                            st.dataframe(df_itens_doc, use_container_width=True, hide_index=True)
-                        else:
-                            st.warning("Detalhes não encontrados para este documento.")
+                    doc_sel = st.selectbox("Selecione um Doc.Inv:", [""] + dfs['DOC_INV'].tolist()[::-1])
+                    if doc_sel != "":
+                        df_idoc = df_itens[df_itens['DOC_INV'] == doc_sel]
+                        if not df_idoc.empty:
+                            df_idoc.sort_values(by='STATUS_CONTAGEM', ascending=False, inplace=True)
+                            st.dataframe(df_idoc, use_container_width=True, hide_index=True)
+                        else: st.warning("Detalhes não encontrados.")
         except: st.warning("Estrutura do relatório WMS indisponível.")
 
 def tela_administrador():
     cabecalho_weg()
     st.markdown("#### Painel de Gestão (Root)")
-    if st.session_state['nivel_id'] != "0": return st.error("🔒 Restrito a credenciais corporativas Nível 0.")
+    if st.session_state['nivel_id'] != "0": return st.error("🔒 Restrito a credenciais Nível 0.")
 
     aba_novo, aba_desc, aba_user, aba_email = st.tabs(["➕ Homologar Peça Mestra", "🗑️ Descomissionar Peça", "👥 Matriz de Usuários", "✉️ Config. Alertas"])
 
     with aba_email:
-        st.markdown("Defina os e-mails padronizados que receberão as notificações de **Nova Solicitação** (separados por ponto-e-vírgula).")
+        st.markdown("Defina os e-mails padronizados para **Nova Solicitação** (separados por ponto-e-vírgula).")
         atual_emails = carregar_emails_config()
         with st.form("form_config_email"):
-            emails_input = st.text_input("E-mails de Notificação Padrão:", value=atual_emails, placeholder="exemplo1@weg.net; exemplo2@weg.net")
-            if st.form_submit_button("💾 Salvar Configuração na Nuvem", type="primary"):
+            emails_input = st.text_input("E-mails de Notificação Padrão:", value=atual_emails)
+            if st.form_submit_button("💾 Salvar na Nuvem", type="primary"):
                 try:
                     sh = conectar_planilha()
                     try: ws_cfg = sh.worksheet("Config")
-                    except: 
-                        ws_cfg = sh.add_worksheet("Config", 10, 2)
-                        ws_cfg.update_cell(1, 1, "EMAILS_ALERTA")
-                        
+                    except: ws_cfg = sh.add_worksheet("Config", 10, 2); ws_cfg.update_cell(1, 1, "EMAILS_ALERTA")
                     ws_cfg.update_cell(2, 1, emails_input.strip())
-                    st.cache_data.clear()
-                    st.success("✅ E-mails de alerta configurados com sucesso!")
-                except Exception as e: st.error(f"Erro ao salvar: {e}")
+                    st.cache_data.clear(); st.success("✅ E-mails configurados!")
+                except Exception as e: st.error(f"Erro: {e}")
 
     with aba_novo:
         with st.form("form_novo_modelo", clear_on_submit=True):
             col1, col2, col3 = st.columns(3)
             with col1:
                 n_sap = st.text_input("Código SAP:")
+                n_patrimonio = st.text_input("Patrimônio:")
                 n_antigo = st.text_input("Código Legado:")
-                n_pai = st.text_input("Cód. Estrutural Pai:")
                 n_desc = st.text_input("Nomenclatura (Obrigatório):")
-                n_desenho = st.text_input("Ref. Desenho Técnico:")
             with col2:
-                n_local = st.selectbox("Setor Alocado (Obrigatório):", ["GALPÃO", "FUNDIÇÃO", "MODELAÇÃO"])
+                n_local = st.selectbox("Setor Alocado (*):", ["GALPÃO", "FUNDIÇÃO", "MODELAÇÃO"])
                 n_pos = st.text_input("Slot (Pátio/Prateleira):")
                 n_tipo_mov = st.selectbox("Linha de Equipamento:", ["TURBINA", "REDUTOR", "AMBOS", "OUTRO"])
-                n_equip = st.text_input("Denominação do Equipamento:")
             with col3:
-                n_tipo = st.text_input("Categoria (Modelo/Composto):")
-                n_valor = st.text_input("Valor Contábil:")
-                n_caixa = st.text_input("Caixote/Acondicionamento:")
-                n_obs = st.text_input("Anotação Complementar:")
+                n_pai = st.text_input("Cód. Estrutural Pai:")
+                n_desenho = st.text_input("Ref. Desenho Técnico:")
+                n_equip = st.text_input("Denominação do Equipamento:")
 
             if st.form_submit_button("💾 Escrever no Banco de Dados Cloud", type="primary"):
-                if not n_sap.strip() and not n_antigo.strip(): st.warning("Exigência mínima de rastreio falhou.")
+                if not n_sap.strip() and not n_antigo.strip() and not n_patrimonio.strip(): st.warning("Exigência mínima de rastreio falhou.")
                 elif not n_desc.strip(): st.warning("Nomenclatura inválida.")
                 else:
                     try:
                         sh = conectar_planilha()
                         ws_base = sh.worksheet("Base")
-                        cabs = ws_base.row_values(1)
+                        cabs = [str(c).strip() for c in ws_base.row_values(1)]
                         
+                        if 'Patrimônio' not in cabs:
+                            cabs.append('Patrimônio'); ws_base.update_cell(1, len(cabs), 'Patrimônio')
+                            
                         data_agora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
                         nova_linha = ["" for _ in range(len(cabs))]
-                        
-                        def ins(nome_col, valor):
-                            if nome_col in cabs: nova_linha[cabs.index(nome_col)] = valor
+                        def ins(nc, val):
+                            if nc in cabs: nova_linha[cabs.index(nc)] = val
                             
-                        ins('CÓDIGO ANTIGO', n_antigo.upper()); ins('CODIGO SAP', n_sap.upper()); ins('CÓDIGO PAI', n_pai.upper())
-                        ins('DESENHO', n_desenho.upper()); ins('DESCRIÇÃO', n_desc.upper()); ins('TIPO (MODELO OU COMPOSTO)', n_tipo.upper())
+                        ins('CÓDIGO ANTIGO', n_antigo.upper()); ins('CODIGO SAP', n_sap.upper()); ins('Patrimônio', n_patrimonio.upper())
+                        ins('CÓDIGO PAI', n_pai.upper()); ins('DESENHO', n_desenho.upper()); ins('DESCRIÇÃO', n_desc.upper())
                         ins('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', n_local.upper()); ins('POSIÇÃO GALPÃO', n_pos.upper())
-                        ins('VALOR', n_valor); ins('TURBINA OU REDUTOR?', n_tipo_mov.upper()); ins('MODELO EQUIPAMENTO', n_equip.upper())
-                        ins('CAIXA', n_caixa); ins('ÚLTIMA MOVIMENTAÇÃO', data_agora); ins('OBSERVAÇÃO', n_obs)
+                        ins('TURBINA OU REDUTOR?', n_tipo_mov.upper()); ins('MODELO EQUIPAMENTO', n_equip.upper())
+                        ins('ÚLTIMA MOVIMENTAÇÃO', data_agora)
                         
                         ws_base.append_row(nova_linha)
-                        
-                        try:
-                            ws_hist = sh.worksheet("Historico")
-                            ws_hist.append_row([data_agora, st.session_state['usuario'], f"{n_sap} / {n_antigo}", "CADASTRO NOVO", "", f"{n_local.upper()} ({n_pos.upper()})", ""])
+                        try: sh.worksheet("Historico").append_row([data_agora, st.session_state['usuario'], f"{n_sap} / {n_patrimonio}", "CADASTRO NOVO", "", f"{n_local.upper()} ({n_pos.upper()})", ""])
                         except: pass
-                        
-                        st.cache_data.clear(); st.success("✅ Matriz de dados sincronizada na nuvem.")
+                        st.cache_data.clear(); st.success("✅ Matriz de dados sincronizada.")
                     except Exception as e: st.error(f"Erro: {e}")
 
     with aba_desc:
@@ -1017,10 +943,11 @@ def tela_administrador():
             cod_desc = st.text_input("Código do Ativo a ser Descomissionado:").strip().upper()
             if cod_desc:
                 f_desc = df[(df['CODIGO SAP'].astype(str).str.upper() == cod_desc) | (df['CÓDIGO ANTIGO'].astype(str).str.upper() == cod_desc)]
+                if 'Patrimônio' in df.columns: f_desc = df[f_desc | (df['Patrimônio'].astype(str).str.upper() == cod_desc)]
                 if f_desc.empty: st.warning("Ativo inativo ou inexistente.")
                 else:
                     pd_desc = f_desc.iloc[0]
-                    st.error(f"⚠️ Atenção, fluxo irreversível na área operacional para: **{pd_desc.get('DESCRIÇÃO','-')}**")
+                    st.error(f"⚠️ Fluxo irreversível para: **{pd_desc.get('DESCRIÇÃO','-')}**")
                     with st.form("form_descarte"):
                         motivo = st.text_input("Laudo Técnico / Motivo:")
                         if st.form_submit_button("🗑️ Descomissionar na Nuvem", type="primary"):
@@ -1030,31 +957,24 @@ def tela_administrador():
                                     sh = conectar_planilha()
                                     ws_base = sh.worksheet("Base")
                                     dados_completos = ws_base.get_all_values()
-                                    cabecalhos = dados_completos[0]
-                                    col_sap = cabecalhos.index('CODIGO SAP')
-                                    col_ant = cabecalhos.index('CÓDIGO ANTIGO')
-                                    
+                                    cabs = [str(c).strip() for c in dados_completos[0]]
                                     linha_alvo = None
                                     for i, linha in enumerate(dados_completos[1:], start=2):
-                                        vs = str(linha[col_sap]).strip().upper() if len(linha) > col_sap else ""
-                                        va = str(linha[col_ant]).strip().upper() if len(linha) > col_ant else ""
-                                        if cod_desc in [vs, va] and cod_desc != "": linha_alvo = i; break
+                                        vs = str(linha[cabs.index('CODIGO SAP')]).strip().upper() if 'CODIGO SAP' in cabs else ""
+                                        va = str(linha[cabs.index('CÓDIGO ANTIGO')]).strip().upper() if 'CÓDIGO ANTIGO' in cabs else ""
+                                        vp = str(linha[cabs.index('Patrimônio')]).strip().upper() if 'Patrimônio' in cabs else ""
+                                        if cod_desc in [vs, va, vp] and cod_desc != "": linha_alvo = i; break
                                     
                                     if linha_alvo:
                                         dh = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-                                        loc_atual = dados_completos[linha_alvo-1][cabecalhos.index('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)')]
-                                        pos_atual = dados_completos[linha_alvo-1][cabecalhos.index('POSIÇÃO GALPÃO')]
-                                        
-                                        ws_base.update_cell(linha_alvo, cabecalhos.index('ÚLTIMO LOCAL QUE ESTEVE')+1, f"{loc_atual} ({pos_atual})")
-                                        ws_base.update_cell(linha_alvo, cabecalhos.index('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)')+1, "DESCARTADO")
-                                        ws_base.update_cell(linha_alvo, cabecalhos.index('OBSERVAÇÃO')+1, f"SUCATA: {motivo}")
-                                        ws_base.update_cell(linha_alvo, cabecalhos.index('ÚLTIMA MOVIMENTAÇÃO')+1, dh)
-                                        
-                                        try:
-                                            ws_hist = sh.worksheet("Historico")
-                                            ws_hist.append_row([dh, st.session_state['usuario'], cod_desc, "DESCARTADO/SUCATEADO", "", "", motivo])
+                                        loc_atual = dados_completos[linha_alvo-1][cabs.index('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)')]
+                                        pos_atual = dados_completos[linha_alvo-1][cabs.index('POSIÇÃO GALPÃO')]
+                                        ws_base.update_cell(linha_alvo, cabs.index('ÚLTIMO LOCAL QUE ESTEVE')+1, f"{loc_atual} ({pos_atual})")
+                                        ws_base.update_cell(linha_alvo, cabs.index('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)')+1, "DESCARTADO")
+                                        ws_base.update_cell(linha_alvo, cabs.index('OBSERVAÇÃO')+1, f"SUCATA: {motivo}")
+                                        ws_base.update_cell(linha_alvo, cabs.index('ÚLTIMA MOVIMENTAÇÃO')+1, dh)
+                                        try: sh.worksheet("Historico").append_row([dh, st.session_state['usuario'], cod_desc, "DESCARTADO/SUCATEADO", "", "", motivo])
                                         except: pass
-                                        
                                         st.cache_data.clear(); st.rerun()
                                 except Exception as e: st.error(f"Erro: {e}")
 
@@ -1064,7 +984,6 @@ def tela_administrador():
             ws_u = sh.worksheet("Usuarios")
             df_u = pd.DataFrame(ws_u.get_all_records()).astype(str)
             df_u.replace(["", "None", "nan", "NaN"], "-", inplace=True)
-            
             c_u1, c_u2 = st.columns(2)
             with c_u1:
                 st.dataframe(df_u[['USUARIO', 'NIVEL_ACESSO']], hide_index=True, use_container_width=True)
@@ -1076,37 +995,26 @@ def tela_administrador():
                     if st.form_submit_button("Protocolar Admissão Cloud"):
                         if not u_nome: st.warning("LDAP nulo.")
                         else:
-                            try:
-                                nv = u_nivel.split(" -")[0]
-                                ws_u.append_row([u_nome, "1234", nv])
-                                st.success("Credencial gravada na nuvem.")
-                                st.rerun()
-                            except Exception as e: st.error(f"Erro: {e}")
+                            nv = u_nivel.split(" -")[0]
+                            ws_u.append_row([u_nome, "1234", nv])
+                            st.success("Credencial gravada."); st.rerun()
             with c_u2:
                 user_edit = st.selectbox("Apontar Credencial:", df_u['USUARIO'].tolist())
                 cb1, cb2 = st.columns(2)
                 with cb1:
                     if st.button("🔑 Forçar Chave Padrão", use_container_width=True):
-                        try:
-                            usuarios_dados = ws_u.get_all_values()
-                            for i, linha in enumerate(usuarios_dados[1:], start=2):
-                                if str(linha[0]).strip().upper() == user_edit:
-                                    ws_u.update_cell(i, 2, "1234")
-                                    st.success(f"Log {user_edit} sobrescrito para 1234 na nuvem.")
-                                    break
-                        except Exception as e: st.error(f"Erro: {e}")
+                        usuarios_dados = ws_u.get_all_values()
+                        for i, linha in enumerate(usuarios_dados[1:], start=2):
+                            if str(linha[0]).strip().upper() == user_edit:
+                                ws_u.update_cell(i, 2, "1234"); st.success(f"Log {user_edit} resetado."); break
                 with cb2:
                     if st.button("🚫 Revogar Acesso", use_container_width=True):
                         if user_edit == st.session_state['usuario']: st.error("Falha: Auto-revogação negada.")
                         else:
-                            try:
-                                usuarios_dados = ws_u.get_all_values()
-                                for i, linha in enumerate(usuarios_dados[1:], start=2):
-                                    if str(linha[0]).strip().upper() == user_edit:
-                                        ws_u.delete_rows(i)
-                                        st.success("Log revogado na raiz."); st.rerun()
-                                        break
-                            except Exception as e: st.error(f"Erro: {e}")
+                            usuarios_dados = ws_u.get_all_values()
+                            for i, linha in enumerate(usuarios_dados[1:], start=2):
+                                if str(linha[0]).strip().upper() == user_edit:
+                                    ws_u.delete_rows(i); st.success("Log revogado."); st.rerun(); break
         except: st.error("Base de credenciais indisponível.")
 
 # ==========================================
@@ -1119,12 +1027,12 @@ else:
     st.sidebar.caption(f"Acesso: {st.session_state['nivel']}")
     st.sidebar.markdown("---")
     
-    opcoes_menu = ["🏠 Dashboard", "🔍 Localizar Material", "📥 Emissão de Tickets", "📜 Logs de Auditoria", "📋 Rotina WMS"]
-    if st.session_state['nivel_id'] in ["0", "1"]: opcoes_menu.insert(2, "🔄 Movimentação Fís.") 
-    if st.session_state['nivel_id'] == "0": opcoes_menu.append("⚙️ Painel Root")
+    opcoes_menu = ["🏠 Início (Painel Geral)", "🔍 Consulta de Modelos", "📥 Solicitar Envio / Retorno", "📜 Histórico e Rastreabilidade", "📋 Inventário (Contagem)"]
+    if st.session_state['nivel_id'] in ["0", "1"]: opcoes_menu.insert(2, "🔄 Mover Peça (Galpão)") 
+    if st.session_state['nivel_id'] == "0": opcoes_menu.append("⚙️ Administração do Sistema")
 
     aba_atual = st.session_state.get('menu_lateral_nav')
-    if aba_atual not in opcoes_menu: st.session_state['menu_lateral_nav'] = "🏠 Dashboard"
+    if aba_atual not in opcoes_menu: st.session_state['menu_lateral_nav'] = "🏠 Início (Painel Geral)"
 
     menu_selecionado = st.sidebar.radio("Navegação Estrutural:", opcoes_menu, key="menu_lateral_nav")
     st.sidebar.markdown("---")
@@ -1149,10 +1057,10 @@ else:
 
     if st.sidebar.button("🚪 Desconectar", use_container_width=True): st.session_state.clear(); st.rerun()
 
-    if menu_selecionado == "🏠 Dashboard": tela_geral()
-    elif menu_selecionado == "🔍 Localizar Material": tela_consulta()
-    elif menu_selecionado == "🔄 Movimentação Fís.": tela_modificar()
-    elif menu_selecionado == "📥 Emissão de Tickets": tela_solicitacoes()
-    elif menu_selecionado == "📜 Logs de Auditoria": tela_historico()
-    elif menu_selecionado == "📋 Rotina WMS": tela_inventario()
-    elif menu_selecionado == "⚙️ Painel Root": tela_administrador()
+    if menu_selecionado == "🏠 Início (Painel Geral)": tela_geral()
+    elif menu_selecionado == "🔍 Consulta de Modelos": tela_consulta()
+    elif menu_selecionado == "🔄 Mover Peça (Galpão)": tela_modificar()
+    elif menu_selecionado == "📥 Solicitar Envio / Retorno": tela_solicitacoes()
+    elif menu_selecionado == "📜 Histórico e Rastreabilidade": tela_historico()
+    elif menu_selecionado == "📋 Inventário (Contagem)": tela_inventario()
+    elif menu_selecionado == "⚙️ Administração do Sistema": tela_administrador()
