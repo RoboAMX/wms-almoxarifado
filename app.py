@@ -1105,8 +1105,8 @@ else:
     if st.session_state['nivel_id'] == "0": 
         opcoes_menu.append("⚙️ Gestão de Modelos")
         
-    # MENU EXCLUSIVO PARA SUPER ADMINS (Roberto e Limam)
-    SUPER_ADMINS = ["ROBERTO", "LIMAM"]
+    # MENU EXCLUSIVO PARA SUPER ADMINS (Robertoa e Limam)
+    SUPER_ADMINS = ["ROBERTOA", "LIMAM"]
     if st.session_state['usuario'].upper() in SUPER_ADMINS:
         opcoes_menu.append("🔐 Config. Globais (Super Admin)")
 
