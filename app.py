@@ -39,6 +39,11 @@ def aplicar_estilo_weg():
             box-shadow: 0 4px 8px rgba(0,0,0,0.05) !important;
         }
 
+        /* Força fundo branco dentro das tabelas/dataframes para evitar o preto do Dark Mode */
+        [data-testid="stDataFrame"] > div {
+            background-color: #FFFFFF !important;
+        }
+
         /* 4. PROTEÇÃO BLINDADA PARA A SIDEBAR (TUDO BRANCO NO FUNDO AZUL WEG) */
         [data-testid="stSidebar"] {background-color: #005099 !important;}
         [data-testid="stSidebar"] *, 
@@ -232,7 +237,7 @@ def tela_geral():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # GRÁFICOS (Forçando theme=None para impedir fundo preto)
+    # GRÁFICOS COM FUNDO BRANCO FORÇADO
     gc1, gc2 = st.columns(2)
     
     with gc1.container(border=True):
@@ -243,11 +248,12 @@ def tela_geral():
         if not df_loc.empty:
             base = alt.Chart(df_loc).encode(
                 theta=alt.Theta("Qtd:Q", stack=True),
-                color=alt.Color("Local:N", scale=alt.Scale(scheme='blues'), legend=alt.Legend(title="Setor", orient="bottom")),
+                color=alt.Color("Local:N", scale=alt.Scale(scheme='blues'), legend=alt.Legend(title="Setor", orient="bottom", labelColor="#002B5E", titleColor="#002B5E")),
                 tooltip=['Local', 'Qtd']
             )
-            donut = base.mark_arc(innerRadius=60, stroke="#fff")
-            st.altair_chart(donut.properties(height=320), use_container_width=True, theme=None)
+            # Adiciona .configure(background='white') para matar o Dark Mode no gráfico
+            donut = base.mark_arc(innerRadius=60, stroke="#fff").properties(height=320).configure(background='#FFFFFF').configure_view(strokeWidth=0)
+            st.altair_chart(donut, use_container_width=True, theme=None)
 
     with gc2.container(border=True):
         st.markdown("<h5 style='text-align: center;'>Categoria de Equipamento</h5>", unsafe_allow_html=True)
@@ -256,13 +262,31 @@ def tela_geral():
         
         if not df_tip.empty:
             barras = alt.Chart(df_tip).mark_bar(cornerRadiusEnd=4, height=35).encode(
-                x=alt.X('Qtd:Q', title='Quantidade Total', axis=alt.Axis(grid=False)),
-                y=alt.Y('Tipo:N', title=None, sort='-x', axis=alt.Axis(labelLimit=200)),
+                x=alt.X('Qtd:Q', title='Quantidade Total', axis=alt.Axis(grid=False, labelColor="#002B5E", titleColor="#002B5E")),
+                y=alt.Y('Tipo:N', title=None, sort='-x', axis=alt.Axis(labelLimit=200, labelColor="#002B5E")),
                 color=alt.value('#009EE3'),
                 tooltip=['Tipo', 'Qtd']
             )
             texto_barras = barras.mark_text(align='left', baseline='middle', dx=5, fontWeight='bold', color="#002B5E").encode(text='Qtd:Q')
-            st.altair_chart((barras + texto_barras).properties(height=320), use_container_width=True, theme=None)
+            
+            # Adiciona .configure(background='white')
+            grafico_barras = (barras + texto_barras).properties(height=320).configure(background='#FFFFFF').configure_view(strokeWidth=0)
+            st.altair_chart(grafico_barras, use_container_width=True, theme=None)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    st.markdown("### ⏱️ Últimas Movimentações Registradas")
+    st.caption("Visão rápida das 10 últimas peças que tiveram seus endereços ou status atualizados no sistema.")
+    
+    with st.container(border=True):
+        try:
+            df_temp = df.copy()
+            df_temp['DATA_ORDENACAO'] = pd.to_datetime(df_temp['ÚLTIMA MOVIMENTAÇÃO'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
+            df_recentes = df_temp.sort_values(by='DATA_ORDENACAO', ascending=False).head(10)
+            colunas_resumo = [c for c in ['CODIGO SAP', 'Patrimônio', 'DESCRIÇÃO', 'LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', 'POSIÇÃO GALPÃO', 'ÚLTIMA MOVIMENTAÇÃO'] if c in df_recentes.columns]
+            st.dataframe(df_recentes[colunas_resumo], use_container_width=True, hide_index=True)
+        except Exception as e:
+            st.dataframe(df.head(10), use_container_width=True, hide_index=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
