@@ -26,7 +26,7 @@ def aplicar_estilo_weg():
         .stButton > button {background-color: #005099; color: white; border-radius: 4px; border: none; padding: 10px 24px; font-weight: bold;}
         .stButton > button:hover {background-color: #003d75; color: white; border: 1px solid white;}
         
-        /* Estilo exclusivo para os Botões do Menu na Sidebar (alinhamento à esquerda e translúcido) */
+        /* Estilo exclusivo para os Botões do Menu na Sidebar */
         [data-testid="stSidebar"] .stButton > button {
             background-color: rgba(255, 255, 255, 0.1) !important;
             border: 1px solid rgba(255, 255, 255, 0.2) !important;
@@ -166,47 +166,95 @@ def tela_login():
             except Exception as e: st.error(f"⚠️ Erro ao verificar usuários: {e}")
 
 # ==========================================
-# TELA 1: DASHBOARD GERAL
+# TELA 1: DASHBOARD GERAL (NOVO LAYOUT MODO ESCURO/CLARO)
 # ==========================================
 def tela_geral():
     cabecalho_weg()
     df = carregar_base()
     if df.empty: return st.warning("⚠️ A aba 'Base' está vazia ou não foi encontrada.")
 
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    # Filtra Peças Ativas
     df_ativos = df[df['LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)'].astype(str).str.upper() != "DESCARTADO"]
     total_modelos = len(df_ativos)
     
-    try:
-        col_local, col_tipo = 'LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', 'TURBINA OU REDUTOR?'
-        loc_limpo, tip_limpo = df_ativos[col_local].astype(str).str.upper(), df_ativos[col_tipo].astype(str).str.upper()
+    col_local = 'LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)'
+    col_tipo = 'TURBINA OU REDUTOR?'
+    loc_limpo = df_ativos[col_local].astype(str).str.upper()
+    tip_limpo = df_ativos[col_tipo].astype(str).str.upper()
+
+    st.markdown("### 📊 Panorama Geral de Ocupação")
+
+    # MÉTRICAS DENTRO DE CONTAINERS (Para melhor contraste no Modo Escuro)
+    m1, m2, m3, m4 = st.columns(4)
+    with m1.container(border=True):
+        st.metric("📦 Peças Ativas (Total)", f"{total_modelos}")
+    with m2.container(border=True):
+        st.metric("📍 No Galpão (SZO)", len(df_ativos[loc_limpo.str.contains("GALP", na=False)]))
+    with m3.container(border=True):
+        st.metric("🔥 Na Fundição", len(df_ativos[loc_limpo.str.contains("FUNDI", na=False)]))
+    with m4.container(border=True):
+        st.metric("🪚 Na Modelação", len(df_ativos[loc_limpo.str.contains("MODEL", na=False)]))
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # GRÁFICOS MELHORADOS E ADAPTÁVEIS
+    gc1, gc2 = st.columns(2)
+    
+    with gc1.container(border=True):
+        st.markdown("<h5 style='text-align: center;'>Distribuição por Setor Físico</h5>", unsafe_allow_html=True)
+        df_loc = df_ativos[df_ativos[col_local] != "-"][col_local].value_counts().reset_index()
+        df_loc.columns = ['Local', 'Qtd']
         
-        col1.metric("📦 Peças Ativas", f"{total_modelos}")
-        col2.metric("📍 Galpão", len(df_ativos[loc_limpo.str.contains("GALP", na=False)]))
-        col3.metric("🔥 Fundição", len(df_ativos[loc_limpo.str.contains("FUNDI", na=False)]))
-        col4.metric("🪚 Modelação", len(df_ativos[loc_limpo.str.contains("MODEL", na=False)]))
-        col5.metric("🌪️ Turbinas", len(df_ativos[tip_limpo.str.contains("TURB", na=False)]))
-        col6.metric("⚙️ Redutores", len(df_ativos[tip_limpo.str.contains("REDUT", na=False)]))
+        if not df_loc.empty:
+            # Gráfico de Rosca (Donut) Moderno
+            base = alt.Chart(df_loc).encode(
+                theta=alt.Theta("Qtd:Q", stack=True),
+                color=alt.Color("Local:N", scale=alt.Scale(scheme='blues'), legend=alt.Legend(title="Setor", orient="bottom")),
+                tooltip=['Local', 'Qtd']
+            )
+            donut = base.mark_arc(innerRadius=60, stroke="#fff")
+            st.altair_chart(donut.properties(height=320), use_container_width=True, theme="streamlit")
 
-        st.markdown("---")
-        gc1, gc2 = st.columns(2)
-        with gc1:
-            st.markdown("**Distribuição por Local Armazenado**")
-            df_loc = df_ativos[(df_ativos[col_local] != "-")][col_local].value_counts().reset_index()
-            df_loc.columns = ['Local', 'Quantidade']
-            if not df_loc.empty: st.altair_chart(alt.Chart(df_loc).mark_bar(color='#005099').encode(x='Quantidade:Q', y=alt.Y('Local:N', sort='-x')).properties(height=300), use_container_width=True)
+    with gc2.container(border=True):
+        st.markdown("<h5 style='text-align: center;'>Categoria de Equipamento</h5>", unsafe_allow_html=True)
+        df_tip = df_ativos[df_ativos[col_tipo] != "-"][col_tipo].value_counts().reset_index()
+        df_tip.columns = ['Tipo', 'Qtd']
+        
+        if not df_tip.empty:
+            # Gráfico de Barras Horizontais (Mais fácil de ler)
+            barras = alt.Chart(df_tip).mark_bar(cornerRadiusEnd=4, height=35).encode(
+                x=alt.X('Qtd:Q', title='Quantidade Total', axis=alt.Axis(grid=False)),
+                y=alt.Y('Tipo:N', title=None, sort='-x', axis=alt.Axis(labelLimit=200)),
+                color=alt.value('#009EE3'),
+                tooltip=['Tipo', 'Qtd']
+            )
+            texto_barras = barras.mark_text(align='left', baseline='middle', dx=5, fontWeight='bold').encode(text='Qtd:Q')
+            st.altair_chart((barras + texto_barras).properties(height=320), use_container_width=True, theme="streamlit")
 
-        with gc2:
-            st.markdown("**Distribuição por Equipamento**")
-            df_tip = df_ativos[(df_ativos[col_tipo] != "-")][col_tipo].value_counts().reset_index()
-            df_tip.columns = ['Tipo', 'Quantidade']
-            if not df_tip.empty: st.altair_chart(alt.Chart(df_tip).mark_bar(color='#009EE3').encode(x=alt.X('Tipo:N', axis=alt.Axis(labelAngle=0)), y='Quantidade:Q').properties(height=300), use_container_width=True)
-    except: pass
+    st.markdown("<br>", unsafe_allow_html=True)
 
-    st.markdown("---")
-    st.markdown("#### Base de Dados Completa")
-    st.dataframe(df, use_container_width=True, height=400)
-    if st.button("🔄 Atualizar Dados Agora"): st.cache_data.clear(); st.rerun()
+    # SUBSTITUI A BASE DE DADOS COMPLETA PELAS "ÚLTIMAS MOVIMENTAÇÕES"
+    st.markdown("### ⏱️ Últimas Movimentações Registradas")
+    st.caption("Visão rápida das 10 últimas peças que tiveram seus endereços ou status atualizados no sistema.")
+    
+    with st.container(border=True):
+        try:
+            # Criando uma coluna de data temporária para ordenar corretamente
+            df_temp = df.copy()
+            df_temp['DATA_ORDENACAO'] = pd.to_datetime(df_temp['ÚLTIMA MOVIMENTAÇÃO'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
+            df_recentes = df_temp.sort_values(by='DATA_ORDENACAO', ascending=False).head(10)
+            
+            colunas_resumo = [c for c in ['CODIGO SAP', 'Patrimônio', 'DESCRIÇÃO', 'LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', 'POSIÇÃO GALPÃO', 'ÚLTIMA MOVIMENTAÇÃO'] if c in df_recentes.columns]
+            
+            st.dataframe(df_recentes[colunas_resumo], use_container_width=True, hide_index=True)
+        except Exception as e:
+            # Fallback caso a ordenação de data falhe por algum motivo
+            st.dataframe(df.head(10), use_container_width=True, hide_index=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("🔄 Sincronizar Painel Agora", use_container_width=True): 
+        st.cache_data.clear()
+        st.rerun()
 
 # ==========================================
 # TELA 2: CONSULTA DE MODELOS
@@ -1105,7 +1153,7 @@ else:
     if st.session_state['nivel_id'] == "0": 
         opcoes_menu.append("⚙️ Gestão de Modelos")
         
-    # MENU EXCLUSIVO PARA SUPER ADMINS (Robertoa e Limam)
+    # MENU EXCLUSIVO PARA SUPER ADMINS (Roberto e Limam)
     SUPER_ADMINS = ["ROBERTOA", "LIMAM"]
     if st.session_state['usuario'].upper() in SUPER_ADMINS:
         opcoes_menu.append("🔐 Config. Globais (Super Admin)")
