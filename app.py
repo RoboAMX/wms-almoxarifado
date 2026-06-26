@@ -197,7 +197,7 @@ def tela_consulta():
     df = carregar_base()
     if df.empty: return st.warning("⚠️ Base vazia.")
 
-    busca = st.text_input("🔎 Localizar Peça (Digite SAP, Patrimônio, Antigo ou Descrição):", value=st.session_state['ultima_busca'])
+    busca = st.text_input("🔎 Localizar Modelo (Digite SAP, Patrimônio, Antigo ou Descrição):", value=st.session_state['ultima_busca'])
     st.session_state['ultima_busca'] = busca
     st.markdown("---")
     
@@ -208,43 +208,68 @@ def tela_consulta():
         for c in cols: mask |= df[c].astype(str).str.upper().str.contains(termo, na=False)
         df_f = df[mask]
         
-        if df_f.empty: st.warning("Nenhuma peça encontrada com este termo.")
+        if df_f.empty: st.warning("Nenhum modelo encontrado.")
         else:
-            st.success(f"✅ {len(df_f)} peça(s) encontrada(s)!")
+            st.success(f"✅ {len(df_f)} modelo(s) encontrado(s)!")
             colunas_resumo = [c for c in ['CODIGO SAP', 'Patrimônio', 'CÓDIGO ANTIGO', 'DESCRIÇÃO', 'LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)'] if c in df.columns]
             st.dataframe(df_f[colunas_resumo], use_container_width=True, hide_index=True)
+            
             st.markdown("#### Ficha Técnica Detalhada")
             
             def fmt(idx): return f"SAP: {df_f.loc[idx].get('CODIGO SAP', '-')} | {df_f.loc[idx].get('DESCRIÇÃO', '-')}"
-            item = st.selectbox("Selecione a peça:", df_f.index.tolist(), format_func=fmt)
+            item = st.selectbox("Selecione a peça para detalhar:", df_f.index.tolist(), format_func=fmt)
             
             if item is not None:
-                p = df_f.loc[item]
+                peca = df_f.loc[item]
+                
+                # ==========================================
+                # NOVO DESIGN DA FICHA TÉCNICA
+                # ==========================================
                 with st.container(border=True):
-                    st.subheader(f"🛠️ {p.get('DESCRIÇÃO', '-')}")
-                    c1, c2, c3 = st.columns(3)
-                    with c1:
-                        st.markdown("**Identificação**")
-                        st.write(f"**Código SAP:** {p.get('CODIGO SAP', '-')}")
-                        st.write(f"**Patrimônio:** {p.get('Patrimônio', '-')}") 
-                        st.write(f"**Código Antigo:** {p.get('CÓDIGO ANTIGO', '-')}")
-                        st.write(f"**Desenho:** {p.get('DESENHO', '-')}")
-                    with c2:
-                        st.markdown("**Localização Física**")
-                        st.info(f"📍 **Local:** {p.get('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', '-')}")
-                        st.success(f"🗄️ **Posição:** {p.get('POSIÇÃO GALPÃO', '-')}")
-                    with c3:
-                        st.markdown("**Detalhes Técnicos**")
-                        st.write(f"**Aplicação:** {p.get('TURBINA OU REDUTOR?', '-')} / {p.get('MODELO EQUIPAMENTO', '-')}")
-                        st.write(f"**Última Movimentação:** {p.get('ÚLTIMA MOVIMENTAÇÃO', '-')}")
+                    # Título com a cor WEG
+                    st.markdown(f"<h3 style='color: #005099; margin-bottom: 0px;'>⚙️ {peca.get('DESCRIÇÃO', '-')}</h3>", unsafe_allow_html=True)
+                    st.markdown("---")
                     
-                    obs = p.get('OBSERVAÇÃO', '-')
-                    if str(obs).strip() != "-": st.warning(f"**Observação:** {obs}")
+                    # Destaque principal para a Localização via st.metric
+                    loc_col1, loc_col2 = st.columns(2)
+                    loc_col1.metric("📍 Localização Atual", peca.get('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', '-'))
+                    loc_col2.metric("🗄️ Posição / Slot", peca.get('POSIÇÃO GALPÃO', '-'))
+                    
+                    st.markdown("---")
+                    
+                    # Grade de detalhes dividida em 3 colunas limpas
+                    c1, c2, c3 = st.columns(3)
+                    
+                    with c1:
+                        st.markdown("##### 🏷️ Identificação")
+                        st.write(f"**Código SAP:** {peca.get('CODIGO SAP', '-')}")
+                        st.write(f"**Patrimônio:** {peca.get('Patrimônio', '-')}")
+                        st.write(f"**Código Antigo:** {peca.get('CÓDIGO ANTIGO', '-')}")
+                        st.write(f"**Código Pai:** {peca.get('CÓDIGO PAI', '-')}")
+                        
+                    with c2:
+                        st.markdown("##### 🛠️ Especificações")
+                        st.write(f"**Desenho Técnico:** {peca.get('DESENHO', '-')}")
+                        st.write(f"**Equipamento:** {peca.get('MODELO EQUIPAMENTO', '-')}")
+                        st.write(f"**Aplicação:** {peca.get('TURBINA OU REDUTOR?', '-')}")
+                        st.write(f"**Tipo:** {peca.get('TIPO (MODELO OU COMPOSTO)', '-')}")
+                        
+                    with c3:
+                        st.markdown("##### ⏳ Histórico Sistêmico")
+                        st.write(f"**Última Movimentação:** {peca.get('ÚLTIMA MOVIMENTAÇÃO', '-')}")
+                        # Inclusão do Último Local como solicitado
+                        st.write(f"**Último Local que Esteve:** {peca.get('ÚLTIMO LOCAL QUE ESTEVE', '-')}")
+                    
+                    obs = peca.get('OBSERVAÇÃO', '-')
+                    if str(obs).strip() != "-":
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        st.info(f"📝 **Anotação Complementar:** {obs}")
 
+                    # Botões de atalho no final do container
                     st.markdown("---")
                     bc1, bc2 = st.columns(2)
-                    cod_mem = p.get('CODIGO SAP', '-')
-                    if str(cod_mem).strip() in ["-", ""]: cod_mem = p.get('CÓDIGO ANTIGO', '')
+                    cod_mem = peca.get('CODIGO SAP', '-')
+                    if str(cod_mem).strip() in ["-", ""]: cod_mem = peca.get('CÓDIGO ANTIGO', '')
                     
                     if st.session_state['nivel_id'] in ["0", "1"]:
                         with bc1: st.button("✏️ Mover esta Peça", use_container_width=True, on_click=ir_para_tela, args=("🔄 Mover Peça (Galpão)", cod_mem))
@@ -299,8 +324,7 @@ def tela_modificar():
                                 va = str(linha[col_ant]).strip().upper() if len(linha) > col_ant else ""
                                 vp = str(linha[col_pat]).strip().upper() if col_pat != -1 and len(linha) > col_pat else ""
                                 if cod in [vs, va, vp] and cod != "":
-                                    linha_alvo_sheets = i
-                                    break
+                                    linha_alvo_sheets = i; break
                             
                             if linha_alvo_sheets:
                                 dh = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
@@ -403,9 +427,7 @@ def tela_solicitacoes():
                                     cabs = ws_solic.row_values(1)
                                     required = ["DATA_HORA", "SOLICITANTE", "TIPO", "CODIGO_SAP", "NF", "STATUS", "OBSERVACAO", "DESTINO_NOME", "PRAZO", "EXECUTADO_POR", "EXECUTADO_EM", "ID_SOLICITACAO"]
                                     for r in required:
-                                        if r not in cabs:
-                                            cabs.append(r)
-                                            ws_solic.update_cell(1, len(cabs), r)
+                                        if r not in cabs: cabs.append(r); ws_solic.update_cell(1, len(cabs), r)
                                     
                                     try:
                                         col_id = cabs.index("ID_SOLICITACAO") + 1
@@ -478,11 +500,11 @@ def tela_solicitacoes():
             else:
                 df_pend['SLA'] = df_pend['PRAZO'].apply(calcular_sla)
                 df_pend.insert(0, "Selecionar", False)
-                df_ed = st.data_editor(df_pend[["Selecionar", "ID_SOLICITACAO", "SLA", "STATUS", "PRAZO", "TIPO", "DESTINO_NOME", "CODIGO_SAP", "SOLICITANTE"]], hide_index=True, use_container_width=True, disabled=["ID_SOLICITACAO", "SLA", "STATUS", "PRAZO", "TIPO", "DESTINO_NOME", "CODIGO_SAP", "SOLICITANTE"])
-                ls = df_pend.loc[df_ed[df_ed["Selecionar"] == True].index]
+                
+                st.dataframe(df_pend[["ID_SOLICITACAO", "SLA", "STATUS", "PRAZO", "TIPO", "DESTINO_NOME", "CODIGO_SAP", "SOLICITANTE"]], hide_index=True, use_container_width=True)
+                st.markdown("---")
                 
                 col_almox, col_compras = st.columns(2)
-                
                 with col_almox:
                     if st.session_state['nivel_id'] in ["0", "1"]:
                         st.subheader("📦 Ações do Almoxarifado")
@@ -492,9 +514,8 @@ def tela_solicitacoes():
                         
                         if st.button("🔄 Confirmar Status", type="primary") and id_almox != "":
                             try:
-                                cabs_solic = [str(c).strip() for c in ws_solic.row_values(1)]
-                                col_id_idx = cabs_solic.index('ID_SOLICITACAO') + 1
-                                todos_ids = ws_solic.col_values(col_id_idx)
+                                cabs_solic = ws_solic.row_values(1)
+                                todos_ids = ws_solic.col_values(cabs_solic.index('ID_SOLICITACAO') + 1)
                                 
                                 if id_almox in todos_ids:
                                     linha = todos_ids.index(id_almox) + 1
@@ -514,16 +535,14 @@ def tela_solicitacoes():
                                         
                                         ws_base = sh.worksheet("Base")
                                         dados_base = ws_base.get_all_values()
-                                        cabs_base = [str(c).strip() for c in dados_base[0]]
+                                        cabs_base = dados_base[0]
                                         
                                         linha_base = None
                                         for i, r_base in enumerate(dados_base[1:], start=2):
                                             vb_sap = str(r_base[cabs_base.index('CODIGO SAP')]).strip() if 'CODIGO SAP' in cabs_base else ""
                                             vb_pat = str(r_base[cabs_base.index('Patrimônio')]).strip() if 'Patrimônio' in cabs_base else ""
                                             vb_ant = str(r_base[cabs_base.index('CÓDIGO ANTIGO')]).strip() if 'CÓDIGO ANTIGO' in cabs_base else ""
-                                            
-                                            if cod_busca in [vb_sap, vb_pat, vb_ant] and cod_busca != "":
-                                                linha_base = i; break
+                                            if cod_busca in [vb_sap, vb_pat, vb_ant] and cod_busca != "": linha_base = i; break
                                         
                                         if linha_base:
                                             loc_atual = str(dados_base[linha_base-1][cabs_base.index('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)')])
@@ -538,7 +557,7 @@ def tela_solicitacoes():
                                     if notificar_solic:
                                         solic_email = str(ws_solic.cell(linha, cabs_solic.index('SOLICITANTE') + 1).value).strip()
                                         if solic_email != "-":
-                                            enviar_email_gmail(f"{solic_email.lower()}@weg.net", f"WEG | Protocolo {id_almox} Atualizado: {nst}", f"<p>O Status do Protocolo {id_almox} mudou para <b>{nst}</b> por {st.session_state['usuario']}.</p>")
+                                            enviar_email_gmail(f"{solic_email.lower()}@weg.net", f"WEG | Protocolo {id_almox} Atualizado: {nst}", f"<div style='font-family: Arial; font-size: 14px;'><p>Olá {solic_email},</p><p>O seu Protocolo de Workflow foi atualizado.</p><p><b>Novo Status: <span style='color:#005099;'>{nst}</span></b></p><ul><li><b>Protocolo:</b> {id_almox}</li><li><b>Material:</b> {tk_sap if nst == 'Enviado/Recebido' else '-'}</li><li><b>Data/Hora:</b> {h_ex}</li></ul></div>")
                                     st.success(f"✅ Protocolo {id_almox} finalizado!"); st.cache_data.clear(); st.rerun() 
                             except Exception as e: st.error(f"Erro ao salvar: {e}")
 
@@ -591,7 +610,7 @@ def tela_historico():
         except: df_hist = pd.DataFrame()
 
         if not df_hist.empty:
-            busca_hist = st.text_input("🔎 Localizar Movimentação:")
+            busca_hist = st.text_input("🔎 Localizar na Trilha de Auditoria:")
             if busca_hist:
                 termo = busca_hist.upper().strip()
                 mask = pd.Series(False, index=df_hist.index)
@@ -608,7 +627,7 @@ def tela_historico():
         except: df_solic = pd.DataFrame()
 
         if not df_solic.empty:
-            busca_solic = st.text_input("🔎 Localizar Ticket:")
+            busca_solic = st.text_input("🔎 Localizar Protocolo:")
             if busca_solic:
                 termo2 = busca_solic.upper().strip()
                 mask2 = pd.Series(False, index=df_solic.index)
@@ -699,25 +718,27 @@ def tela_inventario():
                                         try:
                                             sh = conectar_planilha()
                                             ws_base = sh.worksheet("Base")
-                                            cabs = [str(c).strip() for c in ws_base.row_values(1)]
-                                            if 'DATA_ULTIMA_CONTAGEM' not in cabs:
-                                                cabs.append("DATA_ULTIMA_CONTAGEM"); ws_base.update_cell(1, len(cabs), "DATA_ULTIMA_CONTAGEM")
-                                            
-                                            linha_alvo = None
                                             dados_completos = ws_base.get_all_values()
+                                            cabecalhos = dados_completos[0]
+                                            
+                                            if 'DATA_ULTIMA_CONTAGEM' not in cabecalhos:
+                                                ws_base.update_cell(1, len(cabecalhos)+1, "DATA_ULTIMA_CONTAGEM")
+                                                cabecalhos.append("DATA_ULTIMA_CONTAGEM")
+                                                
+                                            linha_alvo = None
                                             for i, linha in enumerate(dados_completos[1:], start=2):
-                                                vs = str(linha[cabs.index('CODIGO SAP')]).strip().upper() if 'CODIGO SAP' in cabs else ""
-                                                va = str(linha[cabs.index('CÓDIGO ANTIGO')]).strip().upper() if 'CÓDIGO ANTIGO' in cabs else ""
-                                                vp = str(linha[cabs.index('Patrimônio')]).strip().upper() if 'Patrimônio' in cabs else ""
+                                                vs = str(linha[cabecalhos.index('CODIGO SAP')]).strip().upper() if 'CODIGO SAP' in cabecalhos else ""
+                                                va = str(linha[cabecalhos.index('CÓDIGO ANTIGO')]).strip().upper() if 'CÓDIGO ANTIGO' in cabecalhos else ""
+                                                vp = str(linha[cabecalhos.index('Patrimônio')]).strip().upper() if 'Patrimônio' in cabecalhos else ""
                                                 if cod in [vs, va, vp] and cod != "": linha_alvo = i; break
                                             
                                             if linha_alvo:
                                                 dh = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-                                                ws_base.update_cell(linha_alvo, cabs.index('ÚLTIMO LOCAL QUE ESTEVE')+1, f"{p.get('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', '-')} ({p.get('POSIÇÃO GALPÃO', '-')})")
-                                                ws_base.update_cell(linha_alvo, cabs.index('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)')+1, n_loc.upper())
-                                                ws_base.update_cell(linha_alvo, cabs.index('POSIÇÃO GALPÃO')+1, n_pos.upper())
-                                                ws_base.update_cell(linha_alvo, cabs.index('ÚLTIMA MOVIMENTAÇÃO')+1, dh)
-                                                ws_base.update_cell(linha_alvo, cabs.index('DATA_ULTIMA_CONTAGEM')+1, dh)
+                                                ws_base.update_cell(linha_alvo, cabecalhos.index('ÚLTIMO LOCAL QUE ESTEVE')+1, f"{p.get('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', '-')} ({p.get('POSIÇÃO GALPÃO', '-')})")
+                                                ws_base.update_cell(linha_alvo, cabecalhos.index('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)')+1, n_loc.upper())
+                                                ws_base.update_cell(linha_alvo, cabecalhos.index('POSIÇÃO GALPÃO')+1, n_pos.upper())
+                                                ws_base.update_cell(linha_alvo, cabecalhos.index('ÚLTIMA MOVIMENTAÇÃO')+1, dh)
+                                                ws_base.update_cell(linha_alvo, cabecalhos.index('DATA_ULTIMA_CONTAGEM')+1, dh)
                                                 try: sh.worksheet("Historico").append_row([dh, st.session_state['usuario'], cod, "INVENTÁRIO (AJUSTE)", f"{p.get('LOCAL ARMAZENADO (GALPÃO / FUNDIÇÃO / MODELAÇÃO)', '-')} ({p.get('POSIÇÃO GALPÃO', '-')})", f"{n_loc.upper()} ({n_pos.upper()})", f"WMS por {st.session_state['usuario']}"])
                                                 except: pass
 
@@ -836,7 +857,6 @@ def tela_inventario():
             sh = conectar_planilha()
             df_rel = pd.DataFrame(sh.worksheet("Relatorio_Inventario").get_all_records()).astype(str)
             df_rel.replace(["", "None", "nan", "NaN"], "-", inplace=True)
-            
             try:
                 df_itens = pd.DataFrame(sh.worksheet("Inventario_Itens").get_all_records()).astype(str)
                 df_itens.replace(["", "None", "nan", "NaN"], "-", inplace=True)
@@ -850,24 +870,23 @@ def tela_inventario():
                 dfs = df_rel.copy()
                 if f_dt: dfs = dfs[dfs.astype(str).apply(lambda x: x.str.upper().str.contains(f_dt.upper())).any(axis=1)]
                 if ap_desv:
-                    mask_desv = pd.Series(False, index=dfs.index)
-                    if "CORRIGIDAS" in dfs.columns: mask_desv |= pd.to_numeric(dfs["CORRIGIDAS"], errors='coerce').fillna(0) > 0
-                    if "FALTANTES" in dfs.columns: mask_desv |= pd.to_numeric(dfs["FALTANTES"], errors='coerce').fillna(0) > 0
-                    dfs = dfs[mask_desv]
+                    md = pd.Series(False, index=dfs.index)
+                    if "CORRIGIDAS" in dfs.columns: md |= pd.to_numeric(dfs["CORRIGIDAS"], errors='coerce').fillna(0) > 0
+                    if "FALTANTES" in dfs.columns: md |= pd.to_numeric(dfs["FALTANTES"], errors='coerce').fillna(0) > 0
+                    dfs = dfs[md]
                 
                 st.dataframe(dfs.iloc[::-1], use_container_width=True, hide_index=True)
                 
                 if not df_itens.empty:
                     st.markdown("---")
                     st.markdown("### 🔍 Detalhamento do Inventário (Item a Item)")
-                    doc_selecionado = st.selectbox("Selecione um Doc.Inv para ver o detalhamento completo:", [""] + dfs['DOC_INV'].tolist()[::-1])
-                    if doc_selecionado != "":
-                        df_itens_doc = df_itens[df_itens['DOC_INV'] == doc_selecionado]
-                        if not df_itens_doc.empty:
-                            df_itens_doc.sort_values(by='STATUS_CONTAGEM', ascending=False, inplace=True)
-                            st.dataframe(df_itens_doc, use_container_width=True, hide_index=True)
-                        else:
-                            st.warning("Detalhes não encontrados para este documento.")
+                    doc_sel = st.selectbox("Selecione um Doc.Inv:", [""] + dfs['DOC_INV'].tolist()[::-1])
+                    if doc_sel != "":
+                        df_idoc = df_itens[df_itens['DOC_INV'] == doc_sel]
+                        if not df_idoc.empty:
+                            df_idoc.sort_values(by='STATUS_CONTAGEM', ascending=False, inplace=True)
+                            st.dataframe(df_idoc, use_container_width=True, hide_index=True)
+                        else: st.warning("Detalhes não encontrados.")
         except: st.warning("Estrutura do relatório WMS indisponível.")
 
 def tela_administrador():
@@ -907,13 +926,13 @@ def tela_administrador():
             with col2:
                 n_local = st.selectbox("Local Armazenado (*):", ["GALPÃO", "FUNDIÇÃO", "MODELAÇÃO"])
                 n_pos = st.text_input("Posição (Pátio/Prateleira):")
-                n_tipo_mov = st.selectbox("Turbina ou Redutor?:", ["TURBINA", "REDUTOR", "AMBOS", "OUTRO"])
-                n_equip = st.text_input("Modelo do Equipamento:")
+                n_tipo_mov = st.selectbox("Modelo do Equipamento (Turbina/Redutor):", ["TURBINA", "REDUTOR", "AMBOS", "OUTRO"])
+                n_equip = st.text_input("Modelo do Equipamento (Detalhe):")
                 
             with col3:
                 n_pai = st.text_input("Código Pai:")
                 n_desenho = st.text_input("Desenho Técnico:")
-                n_tipo = st.text_input("Categoria (Modelo/Composto):")
+                n_tipo = st.text_input("Tipo (Modelo/Composto):")
                 n_valor = st.text_input("Valor:")
                 n_caixa = st.text_input("Caixa:")
                 
