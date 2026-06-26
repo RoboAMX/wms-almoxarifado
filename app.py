@@ -71,6 +71,28 @@ def aplicar_estilo_weg():
         /* 6. MÉTRICAS (Números grandes nos cards) */
         [data-testid="stMetricValue"] { color: #005099 !important; font-weight: 800 !important; }
         
+        /* ======================================================= */
+        /* 7. NOVA ESTILIZAÇÃO DAS CAIXAS DE ENTRADA (BORDAS ESCURAS) */
+        /* ======================================================= */
+        
+        /* Aplica borda preta mais escura e fundo branco para text_input, selectbox e text_area */
+        div[data-baseweb="input"] > div,
+        div[data-baseweb="select"] > div,
+        div[data-baseweb="textarea"] > div {
+            border: 1px solid #333333 !important; /* Borda preta/escura */
+            background-color: #FFFFFF !important; /* Garante fundo branco nas caixas */
+            border-radius: 4px !important;
+        }
+
+        /* Destaca a borda de azul padrão WEG quando clica para digitar (Focus) */
+        div[data-baseweb="input"] > div:focus-within,
+        div[data-baseweb="select"] > div:focus-within,
+        div[data-baseweb="textarea"] > div:focus-within {
+            border: 2px solid #005099 !important;
+            box-shadow: 0 0 5px rgba(0, 80, 153, 0.2) !important;
+        }
+        /* ======================================================= */
+        
         #MainMenu {visibility: hidden;} footer {visibility: hidden;}
         </style>
     """, unsafe_allow_html=True)
